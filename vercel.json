@@ -1,4 +1,23 @@
 {
-  "buildCommand": "npm install",
-  "devCommand": "node api/verification.js"
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/verification.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/verification.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "public/$1"
+    }
+  ]
 }
