@@ -573,7 +573,7 @@
                 
                 if (count < 0) {
                     clearInterval(interval);
-                    window.close();
+                    countdownEl.textContent = 'You can close the site now';
                 }
             }, 1000);
         }
