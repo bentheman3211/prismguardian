@@ -1,0 +1,18 @@
+{
+  "name": "prismguardian-verification",
+  "version": "1.0.0",
+  "description": "PrismGuardian Verification API",
+  "main": "api/verification.js",
+  "scripts": {
+    "dev": "node api/verification.js",
+    "start": "node api/verification.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
