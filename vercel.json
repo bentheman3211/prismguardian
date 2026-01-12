@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm install",
+  "devCommand": "node api/verification.js",
+  "env": [
+    "HCAPTCHA_SECRET",
+    "HCAPTCHA_SITEKEY",
+    "BOT_API_SECRET",
+    "NODE_ENV"
+  ]
+}
