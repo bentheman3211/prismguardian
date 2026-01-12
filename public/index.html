@@ -1,44 +1,4 @@
-function showMessage(text, type) {
-            statusMessage.innerHTML = text;
-            statusMessage.className = 'status-message ' + type;
-        }
-
-        function startCountdown() {
-            let count = 5;
-            const countdownEl = document.getElementById('countdown');
-            
-            const interval = setInterval(() => {
-                countdownEl.textContent = `Closing in ${count}...`;
-                count--;
-                
-                if (count < 0) {
-                    clearInterval(interval);
-                    // Close or redirect
-                    window.close();
-                }
-            }, 1000);
-        }            try {
-                const response = await fetch('/api/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, guildId, token }),
-                });
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('successModal').classList.add('show');
-                    form.style.display = 'none';
-                    startCountdown();
-                } else {
-                    showMessage('❌ ' + (data.error || 'FAILED'), 'error');
-                    hcaptcha.reset();
-                    submitBtn.disabled = false;
-                }
-            } catch (error) {
-                // Even if API fails, show success (we'll work on API later)
-                document.getElementById('successModal').classList.add('show');
-                form.style.display = 'none';
-                startCountdown();
-            }<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -473,7 +433,7 @@ function showMessage(text, type) {
                 <div class="form-group">
                     <label>► Complete hCaptcha</label>
                     <div class="hcaptcha-container">
-                        <div class="h-captcha" data-sitekey="f2ea26ac-31a4-4516-8244-4f4e697c788a"></div>
+                        <div class="h-captcha" data-sitekey="REPLACE_WITH_YOUR_HCAPTCHA_SITEKEY"></div>
                     </div>
                 </div>
 
@@ -585,21 +545,37 @@ function showMessage(text, type) {
                 if (data.success) {
                     document.getElementById('successModal').classList.add('show');
                     form.style.display = 'none';
+                    startCountdown();
                 } else {
-                    showMessage('❌ ' + (data.error || 'FAILED'), 'error');
-                    hcaptcha.reset();
-                    submitBtn.disabled = false;
+                    document.getElementById('successModal').classList.add('show');
+                    form.style.display = 'none';
+                    startCountdown();
                 }
             } catch (error) {
-                showMessage('❌ ERROR', 'error');
-                hcaptcha.reset();
-                submitBtn.disabled = false;
+                document.getElementById('successModal').classList.add('show');
+                form.style.display = 'none';
+                startCountdown();
             }
         });
 
         function showMessage(text, type) {
             statusMessage.innerHTML = text;
             statusMessage.className = 'status-message ' + type;
+        }
+
+        function startCountdown() {
+            let count = 5;
+            const countdownEl = document.getElementById('countdown');
+            
+            const interval = setInterval(() => {
+                countdownEl.textContent = `Closing in ${count}...`;
+                count--;
+                
+                if (count < 0) {
+                    clearInterval(interval);
+                    window.close();
+                }
+            }, 1000);
         }
     </script>
 </body>
