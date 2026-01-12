@@ -327,6 +327,33 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/**
+ * POST /api/notify-success
+ * Notify bot that user verified (for DM)
+ */
+app.post('/api/notify-success', (req, res) => {
+  try {
+    const { userId, guildId, verified } = req.body;
+    
+    console.log(`✅ User ${userId} verified in guild ${guildId}`);
+    
+    // Store verification as complete
+    verificationData.set(userId, {
+      verified: true,
+      timestamp: Date.now(),
+      guildId,
+    });
+    
+    return res.json({
+      success: true,
+      message: 'Verification recorded',
+    });
+  } catch (error) {
+    console.error('Error recording success:', error);
+    res.status(500).json({ success: false });
+  }
+});
+
 // ==================== SERVE VERIFICATION PAGE ====================
 
 app.get('/', (req, res) => {
