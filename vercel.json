@@ -1,10 +1,19 @@
 {
   "buildCommand": "npm install",
   "devCommand": "node api/verification.js",
-  "env": [
-    "HCAPTCHA_SECRET",
-    "HCAPTCHA_SITEKEY",
-    "BOT_API_SECRET",
-    "NODE_ENV"
-  ]
+  "env": {
+    "HCAPTCHA_SECRET": {
+      "required": true
+    },
+    "HCAPTCHA_SITEKEY": {
+      "required": true
+    },
+    "BOT_API_SECRET": {
+      "required": true
+    },
+    "NODE_ENV": {
+      "required": false,
+      "default": "production"
+    }
+  }
 }
