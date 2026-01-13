@@ -74,8 +74,8 @@ function isNonResidentialIP(isp, domain, org) {
 
 async function checkIPReputation(ip) {
   try {
-    // Use ip-api.com for ISP/org info (no API key needed)
-    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain,mobile`);
+    // Get ISP/org info from ip-api.com
+    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain`);
     const data = await response.json();
 
     if (data.status !== 'success') {
@@ -85,12 +85,12 @@ async function checkIPReputation(ip) {
     let risk = 0;
     let reasons = [];
 
-    // Check if it's a VPN/Hosting provider
+    // Check locally if it's a VPN/Hosting provider
     const isNonRes = isNonResidentialIP(data.isp || '', data.domain || '', data.org || '');
     
     if (isNonRes) {
       risk = 100;
-      reasons.push('Non-residential IP detected (VPN/Hosting/Datacenter)');
+      reasons.push('Non-residential IP detected');
     }
 
     return {
@@ -98,13 +98,13 @@ async function checkIPReputation(ip) {
       risk,
       reasons,
       isVPN: isNonRes,
-      isMobile: data.mobile,
       isp: data.isp,
       org: data.org,
       domain: data.domain,
     };
   } catch (error) {
     console.error('❌ IP reputation check error:', error);
+    // If API fails, allow (better than blocking)
     return { safe: true, risk: 0, reason: 'Could not verify IP' };
   }
 }
