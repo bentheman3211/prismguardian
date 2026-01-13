@@ -66,15 +66,15 @@ function validateBotSecret(req, res, next) {
   next();
 }
 
-// ==================== ABUSEIPDB VPN DETECTION ====================
+// ==================== MULTI-SOURCE VPN/PROXY DETECTION ====================
 
 async function checkIPWithAbuseIPDB(ip) {
   try {
-    const apiKey = "919ba4faa33735ba9319ee254312d4a8c54d5a1e71bbd5d36d844205dde2f1b3401adf7c938da886";
+    const apiKey = process.env.ABUSEIPDB_API_KEY;
     
     if (!apiKey) {
-      console.warn('⚠️ ABUSEIPDB_API_KEY not set, defaulting to allow');
-      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
+      console.warn('⚠️ ABUSEIPDB_API_KEY not set');
+      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0, source: 'none' };
     }
 
     const controller = new AbortController();
@@ -97,38 +97,50 @@ async function checkIPWithAbuseIPDB(ip) {
 
     if (!response.ok) {
       console.warn(`⚠️ AbuseIPDB returned ${response.status}`);
-      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
+      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0, source: 'none' };
     }
 
     const data = await response.json();
     const ipData = data.data || {};
     
-    console.log(`📊 AbuseIPDB for ${ip}:`, {
-      isVpn: ipData.isVpn,
-      isProxy: ipData.isProxy,
-      isHosting: ipData.isHosting,
-      abuseScore: ipData.abuseConfidenceScore,
-    });
-
-    return {
-      isVPN: ipData.isVpn || ipData.isProxy || ipData.isHosting || false,
+    const result = {
+      isVPN: ipData.isVpn || ipData.isProxy || false,
+      isHosting: ipData.isHosting || false,
       abuseScore: ipData.abuseConfidenceScore || 0,
       isp: ipData.isp || 'Unknown',
       domain: ipData.domain || 'Unknown',
       usageType: ipData.usageType || 'Unknown',
+      source: 'abuseipdb'
     };
+
+    console.log(`📊 AbuseIPDB for ${ip}:`, result);
+    return result;
   } catch (error) {
     console.error('❌ AbuseIPDB check error:', error.message);
-    return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
+    return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0, source: 'error' };
   }
 }
+
+// Fallback: Check against known residential ISPs (no API calls)
+function isResidentialISP(isp) {
+  const residentialISPs = [
+    'comcast', 'verizon', 'at&t', 'cox', 'spectrum', 'charter',
+    'centurylink', 'frontier', 'optimum', 'suddenlink', 'windstream',
+    'rural electric', 'tribal', 'dsl', 'cable', 'fiber', 'broadband'
+  ];
+  const lowerISP = isp.toLowerCase();
+  return residentialISPs.some(r => lowerISP.includes(r));
+}
+
+// ==================== IP TRACKING & RISK ANALYSIS ====================
 
 function trackIP(ip, userId, guildId) {
   if (!ipDatabase.has(ip)) {
     ipDatabase.set(ip, {
       users: [],
       firstSeen: Date.now(),
-      riskScore: 0,
+      accounts: {},
+      isVPN: false,
     });
   }
 
@@ -144,52 +156,57 @@ function getIPRiskScore(ip, guildId) {
   const ipData = ipDatabase.get(ip);
   if (!ipData) return 0;
 
+  // Count recent verifications from same IP in this guild
   const recentVerifications = [];
   for (const userId of ipData.users) {
     const userData = verificationData.get(userId);
     if (userData && userData.guildId === guildId) {
       const timeDiff = Date.now() - userData.timestamp;
-      if (timeDiff < 5 * 60 * 1000) {
+      // Within last 10 minutes = suspicious
+      if (timeDiff < 10 * 60 * 1000) {
         recentVerifications.push(userData);
       }
     }
   }
 
-  if (recentVerifications.length >= 3) {
-    return 85;
-  }
-
-  if (recentVerifications.length >= 2) {
-    return 60;
-  }
+  // Multiple accounts from same IP in short time = raid indicator
+  if (recentVerifications.length >= 5) return 95;
+  if (recentVerifications.length >= 4) return 85;
+  if (recentVerifications.length >= 3) return 75;
+  if (recentVerifications.length >= 2) return 60;
 
   return 0;
 }
 
 function checkGuildIPComposition(guildId) {
   const guildUsers = [];
-  const nonResIPs = new Set();
+  const vpnIPs = new Set();
+  const residentialIPs = new Set();
 
   for (const [userId, userData] of verificationData.entries()) {
     if (userData.guildId === guildId) {
       guildUsers.push(userData);
       if (userData.isVPN) {
-        nonResIPs.add(userData.ip);
+        vpnIPs.add(userData.ip);
+      } else {
+        residentialIPs.add(userData.ip);
       }
     }
   }
 
   if (guildUsers.length < 3) {
-    return { suspicious: false, nonResPercent: 0 };
+    return { suspicious: false, vpnPercent: 0 };
   }
 
-  const nonResPercent = (nonResIPs.size / guildUsers.length) * 100;
+  const vpnPercent = (vpnIPs.size / guildUsers.length) * 100;
+  const isSuspicious = vpnPercent > 60 || vpnIPs.size >= 5;
 
   return {
-    suspicious: nonResPercent > 70,
-    nonResPercent: Math.round(nonResPercent),
+    suspicious: isSuspicious,
+    vpnPercent: Math.round(vpnPercent),
     totalUsers: guildUsers.length,
-    nonResCount: nonResIPs.size,
+    vpnCount: vpnIPs.size,
+    residentialCount: residentialIPs.size,
   };
 }
 
@@ -221,6 +238,7 @@ app.get('/api/verification-status/:userId', (req, res) => {
       guildId: userData.guildId,
       isExpired,
       expiresIn: Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - userData.timestamp)),
+      wasVPN: userData.isVPN || false,
     });
   } catch (error) {
     console.error('❌ Error checking verification status:', error);
@@ -262,12 +280,38 @@ app.post('/api/verify', async (req, res) => {
     const ipQuality = await checkIPWithAbuseIPDB(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
 
-    if (ipQuality.isVPN) {
-      console.log(`🚫 VPN/Proxy detected for user ${userId}`);
+    // Track this IP
+    const ipData = trackIP(clientIp, userId, guildId);
+    const ipRiskScore = getIPRiskScore(clientIp, guildId);
+
+    // Determine if VPN/Proxy
+    const isVPN = ipQuality.isVPN || ipQuality.isHosting;
+
+    // HIGH RISK: VPN + multiple accounts from same IP
+    if (isVPN && ipRiskScore >= 60) {
+      console.log(`🚫 RAID DETECTED: VPN + multiple accounts from ${clientIp}`);
       return res.status(403).json({
         success: false,
-        error: 'VPN/Proxy usage is not allowed during verification',
+        error: 'Cannot verify: Suspicious activity detected (VPN + multiple accounts)',
+        riskScore: ipRiskScore,
       });
+    }
+
+    // BLOCK pure VPNs during raids (but allow if guild is calm)
+    if (isVPN) {
+      const guildComposition = checkGuildIPComposition(guildId);
+      // Only block VPN if guild already has 60%+ VPN or 5+ VPN accounts
+      if (guildComposition.suspicious) {
+        console.log(`🚫 VPN blocked due to guild raid pattern: ${guildComposition.vpnPercent}% VPN`);
+        return res.status(403).json({
+          success: false,
+          error: 'VPN/Proxy usage is not allowed during raid conditions',
+          riskLevel: 'high',
+        });
+      }
+
+      // Allow VPN but mark it
+      console.log(`⚠️ VPN detected for user ${userId} but guild is calm - allowing`);
     }
 
     // Mark user as verified
@@ -276,10 +320,20 @@ app.post('/api/verify', async (req, res) => {
       timestamp: Date.now(),
       guildId,
       ip: clientIp,
-      isVPN: ipQuality.isVPN,
-      fraudScore: ipQuality.fraud_score,
+      isVPN: isVPN,
+      abuseScore: ipQuality.abuseScore || 0,
+      isp: ipQuality.isp,
+      usageType: ipQuality.usageType,
+      ipRiskScore: ipRiskScore,
       notified: false,
     });
+
+    // Update IP database
+    if (!ipData.accounts[guildId]) {
+      ipData.accounts[guildId] = [];
+    }
+    ipData.accounts[guildId].push(userId);
+    ipData.isVPN = isVPN;
 
     // Remove from quarantine if present
     if (quarantineData.has(userId)) {
@@ -287,7 +341,7 @@ app.post('/api/verify', async (req, res) => {
       console.log(`✅ Removed ${userId} from quarantine`);
     }
 
-    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}`);
+    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}${isVPN ? ' (VPN)' : ''}`);
 
     return res.json({
       success: true,
@@ -295,6 +349,8 @@ app.post('/api/verify', async (req, res) => {
       userId,
       guildId,
       verifiedAt: Date.now(),
+      riskLevel: isVPN ? 'medium' : 'low',
+      usingVPN: isVPN,
     });
   } catch (error) {
     console.error('❌ Error during verification:', error);
@@ -443,12 +499,13 @@ app.post('/api/quarantine/:userId/release', validateBotSecret, (req, res) => {
 
 /**
  * GET /api/raid-status/:guildId
- * Get quarantined users for a guild
+ * Get comprehensive raid status for a guild
  */
 app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
   try {
     const guildId = req.params.guildId;
     const quarantinedUsers = [];
+    const guildComposition = checkGuildIPComposition(guildId);
 
     for (const [userId, info] of quarantineData.entries()) {
       if (info.guildId === guildId) {
@@ -465,6 +522,8 @@ app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
       guildId,
       quarantinedCount: quarantinedUsers.length,
       quarantinedUsers,
+      composition: guildComposition,
+      raidDetected: guildComposition.suspicious,
       timestamp: Date.now(),
     });
   } catch (error) {
@@ -487,6 +546,8 @@ app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
         verifiedUsers.push({
           userId,
           verifiedAt: userData.timestamp,
+          riskLevel: userData.ipRiskScore >= 60 ? 'medium' : 'low',
+          usingVPN: userData.isVPN,
         });
         userData.notified = true;
       }
@@ -527,6 +588,7 @@ app.get('/api/test-ip', async (req, res) => {
     res.json({
       ip,
       isVPN: ipQuality.isVPN,
+      isHosting: ipQuality.isHosting,
       abuseScore: ipQuality.abuseScore,
       isp: ipQuality.isp,
       domain: ipQuality.domain,
