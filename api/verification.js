@@ -539,6 +539,25 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/**
+ * GET /api/test-ip/:ip
+ * Test IP reputation (debug endpoint)
+ */
+app.get('/api/test-ip/:ip', async (req, res) => {
+  try {
+    const ip = req.params.ip;
+    const reputation = await checkIPReputation(ip);
+    
+    res.json({
+      ip,
+      ...reputation,
+    });
+  } catch (error) {
+    console.error('Error testing IP:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ==================== SERVE VERIFICATION PAGE ====================
 
 app.get('/', (req, res) => {
