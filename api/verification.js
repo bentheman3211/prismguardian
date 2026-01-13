@@ -56,47 +56,57 @@ function validateBotSecret(req, res, next) {
 
 async function checkIPReputation(ip) {
   try {
-    // Use free IP quality API to check for VPN/Proxy
-    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,query,isp,org,mobile,proxy`);
+    // Use IPQualityScore API (free tier - 5000 requests/month)
+    const response = await fetch(`https://ipqualityscore.com/api/json/ip?ip=${ip}&strictness=1&allow_public_access=true`);
     const data = await response.json();
 
-    if (data.status !== 'success') {
+    if (!data.success) {
       return { safe: true, risk: 0, reason: 'Could not verify IP' };
     }
 
     let risk = 0;
     let reasons = [];
 
-    // Check for VPN/Proxy
-    if (data.proxy) {
-      risk += 80;
+    // Check for VPN/Proxy - very reliable detection
+    if (data.is_vpn || data.is_proxy) {
+      risk += 100;
       reasons.push('VPN/Proxy detected');
     }
 
-    // Check for mobile hotspot (often suspicious in bulk signups)
-    if (data.mobile) {
-      risk += 20;
-      reasons.push('Mobile IP detected');
+    // Check for datacenter/hosting
+    if (data.is_crawler || data.is_datacenter) {
+      risk += 80;
+      reasons.push('Datacenter/Hosting detected');
     }
 
-    // Check for hosting/datacenter IPs
-    const datacenterPatterns = ['datacenter', 'hosting', 'cloud', 'server', 'vps', 'aws', 'azure', 'linode'];
-    const org = (data.org || '').toLowerCase();
-    const isp = (data.isp || '').toLowerCase();
+    // Check for residential proxy
+    if (data.is_residential_proxy) {
+      risk += 70;
+      reasons.push('Residential proxy detected');
+    }
 
-    if (datacenterPatterns.some(p => org.includes(p) || isp.includes(p))) {
+    // Check for bot activity
+    if (data.recent_abuse) {
       risk += 60;
-      reasons.push('Datacenter/Hosting IP');
+      reasons.push('Recent abuse reported');
+    }
+
+    // Mobile is less suspicious
+    if (data.is_mobile) {
+      risk += 10;
+      reasons.push('Mobile IP');
     }
 
     return {
       safe: risk < 50,
       risk,
       reasons,
-      isVPN: data.proxy,
-      isMobile: data.mobile,
-      org: data.org,
-      isp: data.isp,
+      isVPN: data.is_vpn || data.is_proxy,
+      isResidentialProxy: data.is_residential_proxy,
+      isDatacenter: data.is_datacenter,
+      isMobile: data.is_mobile,
+      fraudScore: data.fraud_score,
+      countryCode: data.country_code,
     };
   } catch (error) {
     console.error('❌ IP reputation check error:', error);
