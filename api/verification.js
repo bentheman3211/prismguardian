@@ -13,7 +13,21 @@ app.use(express.static(path.join(__dirname, '../public')));
 // In-memory storage
 const verificationData = new Map();
 const quarantineData = new Map();
-const ipDatabase = new Map(); // Track IPs and their risk scores
+const ipDatabase = new Map();
+
+// ==================== UTILITY: Get Client IP ====================
+
+function getClientIp(req) {
+  return (
+    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    req.headers['cf-connecting-ip'] ||
+    req.headers['x-real-ip'] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    req.ip ||
+    '0.0.0.0'
+  ).replace(/^::ffff:/, '');
+}
 
 // ==================== HCAPTCHA VERIFICATION ====================
 
@@ -52,61 +66,57 @@ function validateBotSecret(req, res, next) {
   next();
 }
 
-// ==================== IP & VPN DETECTION ====================
+// ==================== LOCAL VPN DETECTION ====================
 
-const VPN_PROVIDERS = [
+const VPN_KEYWORDS = [
   'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'ivpn', 'mullvad',
   'protonvpn', 'privateinternetaccess', 'windscribe', 'tunnelbear',
   'hotspotshield', 'bitdefender', 'kaspersky', 'mcafee', 'veepn', 'vyprvpn',
   'purevpn', 'torguard', 'ipvanish', 'hidemyass', 'astrill', 'zenmate',
   'speedify', 'privatevpn', 'vpnarea', 'perfect privacy', 'gloryvpn',
-  // Hosting/Datacenter
   'aws', 'azure', 'digitalocean', 'linode', 'vultr', 'hetzner',
   'ovh', 'rackspace', 'google cloud', 'heroku', 'vercel', 'render',
   'railway', 'replit', 'oracle', 'fastly', 'cloudflare', 'akamai',
-  'datacenter', 'hosting', 'vps', 'cloud', 'server',
+  'datacenter', 'hosting', 'vps', 'cloud', 'server', 'colocated',
 ];
 
-function isNonResidentialIP(isp, domain, org) {
-  const text = `${isp} ${domain} ${org}`.toLowerCase();
-  return VPN_PROVIDERS.some(provider => text.includes(provider));
-}
-
-async function checkIPReputation(ip) {
-  try {
-    // Get ISP/org info from ip-api.com
-    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain`);
-    const data = await response.json();
-
-    if (data.status !== 'success') {
-      return { safe: true, risk: 0, reason: 'Could not verify IP' };
-    }
-
-    let risk = 0;
-    let reasons = [];
-
-    // Check locally if it's a VPN/Hosting provider
-    const isNonRes = isNonResidentialIP(data.isp || '', data.domain || '', data.org || '');
-    
-    if (isNonRes) {
-      risk = 100;
-      reasons.push('Non-residential IP detected');
-    }
-
-    return {
-      safe: risk === 0,
-      risk,
-      reasons,
-      isVPN: isNonRes,
-      isp: data.isp,
-      org: data.org,
-      domain: data.domain,
-    };
-  } catch (error) {
-    console.error('❌ IP reputation check error:', error);
-    // If API fails, allow (better than blocking)
-    return { safe: true, risk: 0, reason: 'Could not verify IP' };
+function isVPNorNonResidential(ip) {
+  // Check if IP looks like localhost or private
+  if (ip === 'localhost' || ip === '127.0.0.1' || ip === '::1') {
+    return false; // Allow localhost for testing
   }
+
+  if (ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
+    return false; // Allow private IPs
+  }
+
+  // Check reverse DNS lookup info stored locally (if available)
+  // This is a simple check - in production you'd want better detection
+  // For now, we just check the IP itself
+  const ipNum = ip.split('.').map(Number);
+  
+  // Cloud provider IP ranges (simplified - not comprehensive)
+  // AWS: 52.0.0.0/8, 54.0.0.0/8
+  if ((ipNum[0] === 52 || ipNum[0] === 54) && ipNum[1] < 256) {
+    return true;
+  }
+  
+  // Azure: 13.64.0.0/11
+  if (ipNum[0] === 13 && ipNum[1] >= 64 && ipNum[1] <= 95) {
+    return true;
+  }
+
+  // Google Cloud: 35.184.0.0/13, 35.192.0.0/11
+  if (ipNum[0] === 35 && ((ipNum[1] >= 184 && ipNum[1] <= 191) || (ipNum[1] >= 192 && ipNum[1] <= 223))) {
+    return true;
+  }
+
+  // DigitalOcean: 104.131.0.0/16
+  if (ipNum[0] === 104 && ipNum[1] === 131) {
+    return true;
+  }
+
+  return false;
 }
 
 function trackIP(ip, userId, guildId) {
@@ -130,7 +140,6 @@ function getIPRiskScore(ip, guildId) {
   const ipData = ipDatabase.get(ip);
   if (!ipData) return 0;
 
-  // If same IP has multiple users in same guild within 5 minutes, it's suspicious
   const recentVerifications = [];
   for (const userId of ipData.users) {
     const userData = verificationData.get(userId);
@@ -142,7 +151,6 @@ function getIPRiskScore(ip, guildId) {
     }
   }
 
-  // If more than 3 users from same IP in 5 minutes, high risk
   if (recentVerifications.length >= 3) {
     return 85;
   }
@@ -155,18 +163,14 @@ function getIPRiskScore(ip, guildId) {
 }
 
 function checkGuildIPComposition(guildId) {
-  // Check if majority of verified users in guild are using non-residential IPs
   const guildUsers = [];
   const nonResIPs = new Set();
-  const resIPs = new Set();
 
   for (const [userId, userData] of verificationData.entries()) {
-    if (userData.guildId === guildId && userData.ipReputation) {
+    if (userData.guildId === guildId) {
       guildUsers.push(userData);
-      if (userData.ipReputation.isVPN || userData.ipReputation.risk >= 60) {
+      if (userData.isVPN) {
         nonResIPs.add(userData.ip);
-      } else {
-        resIPs.add(userData.ip);
       }
     }
   }
@@ -177,7 +181,6 @@ function checkGuildIPComposition(guildId) {
 
   const nonResPercent = (nonResIPs.size / guildUsers.length) * 100;
 
-  // If more than 70% are non-residential IPs, it's a coordinated attack
   return {
     suspicious: nonResPercent > 70,
     nonResPercent: Math.round(nonResPercent),
@@ -205,7 +208,6 @@ app.get('/api/verification-status/:userId', (req, res) => {
       });
     }
 
-    // Check if verification expired (24 hours)
     const isExpired = Date.now() - userData.timestamp > 24 * 60 * 60 * 1000;
 
     return res.json({
@@ -230,7 +232,7 @@ app.get('/api/verification-status/:userId', (req, res) => {
 app.post('/api/verify', async (req, res) => {
   try {
     const { userId, guildId, token } = req.body;
-    const clientIp = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    const clientIp = getClientIp(req);
 
     if (!userId || !guildId || !token) {
       return res.status(400).json({
@@ -252,16 +254,15 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Check IP reputation
-    const ipReputation = await checkIPReputation(clientIp);
-    console.log(`📊 IP Reputation for ${clientIp}:`, ipReputation);
+    // Check for VPN/Non-residential IP locally
+    const isVPN = isVPNorNonResidential(clientIp);
+    console.log(`📊 IP ${clientIp} - VPN/Cloud: ${isVPN}`);
 
-    // If VPN detected, reject
-    if (ipReputation.isVPN) {
-      console.log(`🚫 VPN detected for user ${userId}`);
+    if (isVPN) {
+      console.log(`🚫 VPN/Cloud IP detected for user ${userId}`);
       return res.status(403).json({
         success: false,
-        error: 'VPN/Proxy usage is not allowed during verification',
+        error: 'VPN/Proxy/Cloud usage is not allowed during verification',
       });
     }
 
@@ -297,7 +298,7 @@ app.post('/api/verify', async (req, res) => {
       timestamp: Date.now(),
       guildId,
       ip: clientIp,
-      ipReputation,
+      isVPN,
       notified: false,
     });
 
@@ -508,7 +509,6 @@ app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
           userId,
           verifiedAt: userData.timestamp,
         });
-        // Mark as notified so we don't return it again
         userData.notified = true;
       }
     }
@@ -532,36 +532,6 @@ app.get('/api/health', (req, res) => {
     timestamp: Date.now(),
     uptime: process.uptime(),
   });
-});
-
-/**
- * GET /api/test-ip/:ip
- * Test IP reputation (debug endpoint)
- */
-app.get('/api/test-ip/:ip', async (req, res) => {
-  try {
-    const ip = req.params.ip;
-    console.log(`🔍 Testing IP: ${ip}`);
-    
-    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain,mobile`);
-    const rawData = await response.json();
-    
-    console.log(`Raw API response:`, rawData);
-    
-    const reputation = await checkIPReputation(ip);
-    
-    res.json({
-      ip,
-      rawApiResponse: rawData,
-      reputation,
-    });
-  } catch (error) {
-    console.error('Error testing IP:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
-  }
 });
 
 // ==================== SERVE VERIFICATION PAGE ====================
