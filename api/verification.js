@@ -123,6 +123,7 @@ app.post('/api/verify', async (req, res) => {
       timestamp: Date.now(),
       guildId,
       ip: clientIp,
+      notified: false,
     });
 
     // Remove from quarantine if present
@@ -317,6 +318,37 @@ app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
   }
 });
 
+/**
+ * GET /api/get-verified-users/:guildId
+ * Get list of users who just verified (for polling)
+ */
+app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
+  try {
+    const guildId = req.params.guildId;
+    const verifiedUsers = [];
+
+    for (const [userId, userData] of verificationData.entries()) {
+      if (userData.guildId === guildId && userData.verified && !userData.notified) {
+        verifiedUsers.push({
+          userId,
+          verifiedAt: userData.timestamp,
+        });
+        // Mark as notified so we don't return it again
+        userData.notified = true;
+      }
+    }
+
+    return res.json({
+      guildId,
+      verifiedUsers,
+      count: verifiedUsers.length,
+    });
+  } catch (error) {
+    console.error('❌ Error getting verified users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ==================== HEALTH CHECK ====================
 
 app.get('/api/health', (req, res) => {
@@ -325,33 +357,6 @@ app.get('/api/health', (req, res) => {
     timestamp: Date.now(),
     uptime: process.uptime(),
   });
-});
-
-/**
- * POST /api/notify-success
- * Notify bot that user verified (for DM)
- */
-app.post('/api/notify-success', (req, res) => {
-  try {
-    const { userId, guildId, verified } = req.body;
-    
-    console.log(`✅ User ${userId} verified in guild ${guildId}`);
-    
-    // Store verification as complete
-    verificationData.set(userId, {
-      verified: true,
-      timestamp: Date.now(),
-      guildId,
-    });
-    
-    return res.json({
-      success: true,
-      message: 'Verification recorded',
-    });
-  } catch (error) {
-    console.error('Error recording success:', error);
-    res.status(500).json({ success: false });
-  }
 });
 
 // ==================== SERVE VERIFICATION PAGE ====================
