@@ -13,6 +13,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 // In-memory storage
 const verificationData = new Map();
 const quarantineData = new Map();
+const ipDatabase = new Map(); // Track IPs and their risk scores
 
 // ==================== HCAPTCHA VERIFICATION ====================
 
@@ -49,6 +50,135 @@ function validateBotSecret(req, res, next) {
     });
   }
   next();
+}
+
+// ==================== IP & VPN DETECTION ====================
+
+async function checkIPReputation(ip) {
+  try {
+    // Use free IP quality API to check for VPN/Proxy
+    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,query,isp,org,mobile,proxy`);
+    const data = await response.json();
+
+    if (data.status !== 'success') {
+      return { safe: true, risk: 0, reason: 'Could not verify IP' };
+    }
+
+    let risk = 0;
+    let reasons = [];
+
+    // Check for VPN/Proxy
+    if (data.proxy) {
+      risk += 80;
+      reasons.push('VPN/Proxy detected');
+    }
+
+    // Check for mobile hotspot (often suspicious in bulk signups)
+    if (data.mobile) {
+      risk += 20;
+      reasons.push('Mobile IP detected');
+    }
+
+    // Check for hosting/datacenter IPs
+    const datacenterPatterns = ['datacenter', 'hosting', 'cloud', 'server', 'vps', 'aws', 'azure', 'linode'];
+    const org = (data.org || '').toLowerCase();
+    const isp = (data.isp || '').toLowerCase();
+
+    if (datacenterPatterns.some(p => org.includes(p) || isp.includes(p))) {
+      risk += 60;
+      reasons.push('Datacenter/Hosting IP');
+    }
+
+    return {
+      safe: risk < 50,
+      risk,
+      reasons,
+      isVPN: data.proxy,
+      isMobile: data.mobile,
+      org: data.org,
+      isp: data.isp,
+    };
+  } catch (error) {
+    console.error('❌ IP reputation check error:', error);
+    return { safe: true, risk: 0, reason: 'Could not verify IP' };
+  }
+}
+
+function trackIP(ip, userId, guildId) {
+  if (!ipDatabase.has(ip)) {
+    ipDatabase.set(ip, {
+      users: [],
+      firstSeen: Date.now(),
+      riskScore: 0,
+    });
+  }
+
+  const ipData = ipDatabase.get(ip);
+  if (!ipData.users.includes(userId)) {
+    ipData.users.push(userId);
+  }
+
+  return ipData;
+}
+
+function getIPRiskScore(ip, guildId) {
+  const ipData = ipDatabase.get(ip);
+  if (!ipData) return 0;
+
+  // If same IP has multiple users in same guild within 5 minutes, it's suspicious
+  const recentVerifications = [];
+  for (const userId of ipData.users) {
+    const userData = verificationData.get(userId);
+    if (userData && userData.guildId === guildId) {
+      const timeDiff = Date.now() - userData.timestamp;
+      if (timeDiff < 5 * 60 * 1000) {
+        recentVerifications.push(userData);
+      }
+    }
+  }
+
+  // If more than 3 users from same IP in 5 minutes, high risk
+  if (recentVerifications.length >= 3) {
+    return 85;
+  }
+
+  if (recentVerifications.length >= 2) {
+    return 60;
+  }
+
+  return 0;
+}
+
+function checkGuildIPComposition(guildId) {
+  // Check if majority of verified users in guild are using non-residential IPs
+  const guildUsers = [];
+  const nonResIPs = new Set();
+  const resIPs = new Set();
+
+  for (const [userId, userData] of verificationData.entries()) {
+    if (userData.guildId === guildId && userData.ipReputation) {
+      guildUsers.push(userData);
+      if (userData.ipReputation.isVPN || userData.ipReputation.risk >= 60) {
+        nonResIPs.add(userData.ip);
+      } else {
+        resIPs.add(userData.ip);
+      }
+    }
+  }
+
+  if (guildUsers.length < 3) {
+    return { suspicious: false, nonResPercent: 0 };
+  }
+
+  const nonResPercent = (nonResIPs.size / guildUsers.length) * 100;
+
+  // If more than 70% are non-residential IPs, it's a coordinated attack
+  return {
+    suspicious: nonResPercent > 70,
+    nonResPercent: Math.round(nonResPercent),
+    totalUsers: guildUsers.length,
+    nonResCount: nonResIPs.size,
+  };
 }
 
 // ==================== VERIFICATION ENDPOINTS ====================
@@ -104,7 +234,7 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    console.log(`🔄 Verifying user ${userId} in guild ${guildId}`);
+    console.log(`🔄 Verifying user ${userId} in guild ${guildId} from IP ${clientIp}`);
 
     // Validate hCaptcha token
     const isValid = await verifyHcaptcha(token, clientIp);
@@ -117,12 +247,52 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
+    // Check IP reputation
+    const ipReputation = await checkIPReputation(clientIp);
+    console.log(`📊 IP Reputation for ${clientIp}:`, ipReputation);
+
+    // If VPN detected, reject
+    if (ipReputation.isVPN) {
+      console.log(`🚫 VPN detected for user ${userId}`);
+      return res.status(403).json({
+        success: false,
+        error: 'VPN/Proxy usage is not allowed during verification',
+      });
+    }
+
+    // Check for duplicate IPs
+    const ipData = trackIP(clientIp, userId, guildId);
+    const ipRiskScore = getIPRiskScore(clientIp, guildId);
+
+    if (ipRiskScore >= 80) {
+      console.log(`🚫 Multiple users from same IP detected: ${clientIp}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Multiple verification attempts from same IP detected',
+      });
+    }
+
+    // Check guild IP composition
+    const guildComposition = checkGuildIPComposition(guildId);
+    if (guildComposition.suspicious) {
+      console.log(`🚨 Guild ${guildId} has ${guildComposition.nonResPercent}% non-residential IPs`);
+      return res.status(403).json({
+        success: false,
+        error: 'Guild verification blocked - suspicious IP patterns detected',
+        details: {
+          nonResidentialPercent: guildComposition.nonResPercent,
+          reason: 'Majority of verifications from non-residential IPs',
+        },
+      });
+    }
+
     // Mark user as verified
     verificationData.set(userId, {
       verified: true,
       timestamp: Date.now(),
       guildId,
       ip: clientIp,
+      ipReputation,
       notified: false,
     });
 
@@ -132,7 +302,7 @@ app.post('/api/verify', async (req, res) => {
       console.log(`✅ Removed ${userId} from quarantine`);
     }
 
-    console.log(`✅ User ${userId} verified successfully`);
+    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}`);
 
     return res.json({
       success: true,
