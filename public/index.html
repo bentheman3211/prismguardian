@@ -543,9 +543,10 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    // Notify success
+                    // Notify bot webhook
                     try {
-                        await fetch('/api/notify-success', {
+                        const webhookUrl = process.env.WEBHOOK_URL || 'http://localhost:3002/webhook/verification-success';
+                        await fetch(webhookUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -555,7 +556,7 @@
                             }),
                         });
                     } catch (error) {
-                        console.log('Success notification sent');
+                        console.log('Webhook notification sent');
                     }
                     
                     document.getElementById('successModal').classList.add('show');
