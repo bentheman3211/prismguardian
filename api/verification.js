@@ -66,116 +66,52 @@ function validateBotSecret(req, res, next) {
   next();
 }
 
-// ==================== LOCAL VPN DETECTION ====================
+// ==================== IPQUALITYSCORE VPN DETECTION ====================
 
-function isVPNorNonResidential(ip) {
-  // Check if IP looks like localhost or private
-  if (ip === 'localhost' || ip === '127.0.0.1' || ip === '::1') {
-    return false;
-  }
+async function checkIPWithIPQualityScore(ip) {
+  try {
+    const apiKey = "ZmfNSd0cNG92JT4MUB2UNG2cY7Q1ffqV";
+    
+    if (!apiKey) {
+      console.warn('⚠️ IPQUALITYSCORE_API_KEY not set, defaulting to allow');
+      return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
+    }
 
-  if (ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-    return false;
-  }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  const ipNum = ip.split('.').map(Number);
-  
-  // Known VPN/Cloud provider IP ranges
-  
-  // AWS: 52.0.0.0/8, 54.0.0.0/8
-  if ((ipNum[0] === 52 || ipNum[0] === 54) && ipNum[1] < 256) {
-    return true;
-  }
-  
-  // Azure: 13.64.0.0/11, 13.96.0.0/13
-  if (ipNum[0] === 13 && ((ipNum[1] >= 64 && ipNum[1] <= 95) || (ipNum[1] >= 96 && ipNum[1] <= 103))) {
-    return true;
-  }
+    const response = await fetch(
+      `https://ipqualityscore.com/api/json/ip/${apiKey}/${ip}?strictness=1`,
+      { signal: controller.signal }
+    );
 
-  // Google Cloud: 35.184.0.0/13, 35.192.0.0/11, 34.64.0.0/10
-  if (ipNum[0] === 35 && ((ipNum[1] >= 184 && ipNum[1] <= 191) || (ipNum[1] >= 192 && ipNum[1] <= 223))) {
-    return true;
-  }
-  if (ipNum[0] === 34 && ipNum[1] >= 64 && ipNum[1] <= 127) {
-    return true;
-  }
+    clearTimeout(timeoutId);
 
-  // DigitalOcean: 104.131.0.0/16, 159.65.0.0/16
-  if ((ipNum[0] === 104 && ipNum[1] === 131) || (ipNum[0] === 159 && ipNum[1] === 65)) {
-    return true;
-  }
+    if (!response.ok) {
+      console.warn(`⚠️ IPQualityScore returned ${response.status}`);
+      return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
+    }
 
-  // Linode: 139.162.0.0/16, 45.33.0.0/16
-  if ((ipNum[0] === 139 && ipNum[1] === 162) || (ipNum[0] === 45 && ipNum[1] === 33)) {
-    return true;
-  }
+    const data = await response.json();
+    
+    console.log(`📊 IPQualityScore for ${ip}:`, {
+      is_vpn: data.is_vpn,
+      is_proxy: data.is_proxy,
+      fraud_score: data.fraud_score,
+    });
 
-  // Vultr: 45.76.0.0/16, 45.77.0.0/16
-  if (ipNum[0] === 45 && (ipNum[1] === 76 || ipNum[1] === 77)) {
-    return true;
+    return {
+      isVPN: data.is_vpn || data.is_proxy || false,
+      fraud_score: data.fraud_score || 0,
+      is_residential: data.is_residential || false,
+      isp: data.ISP || 'Unknown',
+      organization: data.organization || 'Unknown',
+    };
+  } catch (error) {
+    console.error('❌ IPQualityScore check error:', error.message);
+    // On error, allow (better UX than blocking)
+    return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
   }
-
-  // Hetzner: 88.198.0.0/16, 159.69.0.0/16
-  if ((ipNum[0] === 88 && ipNum[1] === 198) || (ipNum[0] === 159 && ipNum[1] === 69)) {
-    return true;
-  }
-
-  // Heroku: 50.19.0.0/16
-  if (ipNum[0] === 50 && ipNum[1] === 19) {
-    return true;
-  }
-
-  // OVH: 15.235.0.0/16, 54.36.0.0/16
-  if ((ipNum[0] === 15 && ipNum[1] === 235) || (ipNum[0] === 54 && ipNum[1] === 36)) {
-    return true;
-  }
-
-  // Fastly: 151.101.0.0/16
-  if (ipNum[0] === 151 && ipNum[1] === 101) {
-    return true;
-  }
-
-  // Akamai: 1.2.3.0/24 (simplified, they use many ranges)
-  if (ipNum[0] === 23 || ipNum[0] === 60 || ipNum[0] === 95 || ipNum[0] === 184) {
-    return true;
-  }
-
-  // ProtonVPN known ranges
-  if (ipNum[0] === 185 && (ipNum[1] === 10 || ipNum[1] === 107 || ipNum[1] === 217)) {
-    return true;
-  }
-
-  // NordVPN known ranges
-  if (ipNum[0] === 37 || (ipNum[0] === 185 && ipNum[1] === 242)) {
-    return true;
-  }
-
-  // ExpressVPN known ranges
-  if (ipNum[0] === 141 || (ipNum[0] === 185 && ipNum[1] === 135)) {
-    return true;
-  }
-
-  // Surfshark
-  if (ipNum[0] === 185 && (ipNum[1] === 228 || ipNum[1] === 229)) {
-    return true;
-  }
-
-  // Private Internet Access
-  if (ipNum[0] === 185 && ipNum[1] === 241) {
-    return true;
-  }
-
-  // CyberGhost
-  if (ipNum[0] === 46 && (ipNum[1] === 29 || ipNum[1] === 30)) {
-    return true;
-  }
-
-  // PrivateVPN
-  if (ipNum[0] === 185 && ipNum[1] === 108) {
-    return true;
-  }
-
-  return false;
 }
 
 function trackIP(ip, userId, guildId) {
@@ -313,41 +249,15 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Check for VPN/Non-residential IP locally
-    const isVPN = isVPNorNonResidential(clientIp);
-    console.log(`📊 IP ${clientIp} - VPN/Cloud: ${isVPN}`);
+    // Check IP with IPQualityScore
+    const ipQuality = await checkIPWithIPQualityScore(clientIp);
+    console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
 
-    if (isVPN) {
-      console.log(`🚫 VPN/Cloud IP detected for user ${userId}`);
+    if (ipQuality.isVPN) {
+      console.log(`🚫 VPN/Proxy detected for user ${userId}`);
       return res.status(403).json({
         success: false,
-        error: 'VPN/Proxy/Cloud usage is not allowed during verification',
-      });
-    }
-
-    // Check for duplicate IPs
-    const ipData = trackIP(clientIp, userId, guildId);
-    const ipRiskScore = getIPRiskScore(clientIp, guildId);
-
-    if (ipRiskScore >= 80) {
-      console.log(`🚫 Multiple users from same IP detected: ${clientIp}`);
-      return res.status(403).json({
-        success: false,
-        error: 'Multiple verification attempts from same IP detected',
-      });
-    }
-
-    // Check guild IP composition
-    const guildComposition = checkGuildIPComposition(guildId);
-    if (guildComposition.suspicious) {
-      console.log(`🚨 Guild ${guildId} has ${guildComposition.nonResPercent}% non-residential IPs`);
-      return res.status(403).json({
-        success: false,
-        error: 'Guild verification blocked - suspicious IP patterns detected',
-        details: {
-          nonResidentialPercent: guildComposition.nonResPercent,
-          reason: 'Majority of verifications from non-residential IPs',
-        },
+        error: 'VPN/Proxy usage is not allowed during verification',
       });
     }
 
@@ -357,7 +267,8 @@ app.post('/api/verify', async (req, res) => {
       timestamp: Date.now(),
       guildId,
       ip: clientIp,
-      isVPN,
+      isVPN: ipQuality.isVPN,
+      fraudScore: ipQuality.fraud_score,
       notified: false,
     });
 
@@ -597,17 +508,21 @@ app.get('/api/health', (req, res) => {
  * GET /api/test-ip
  * Test the user's current IP
  */
-app.get('/api/test-ip', (req, res) => {
+app.get('/api/test-ip', async (req, res) => {
   try {
     const ip = getClientIp(req);
     console.log(`🔍 Testing IP: ${ip}`);
     
-    const isVPN = isVPNorNonResidential(ip);
+    const ipQuality = await checkIPWithIPQualityScore(ip);
     
     res.json({
       ip,
-      isVPN,
-      message: isVPN ? '🚫 VPN/Cloud IP detected' : '✅ Residential IP (allowed)',
+      isVPN: ipQuality.isVPN,
+      fraud_score: ipQuality.fraud_score,
+      is_residential: ipQuality.is_residential,
+      isp: ipQuality.isp,
+      organization: ipQuality.organization,
+      message: ipQuality.isVPN ? '🚫 VPN/Proxy detected' : '✅ Residential IP (allowed)',
     });
   } catch (error) {
     console.error('Error testing IP:', error);
@@ -642,13 +557,19 @@ app.use((err, req, res, next) => {
 // ==================== START SERVER ====================
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n╔═══════════════════════════════════════╗`);
   console.log(`║  🔐 Verification API Running 🛡️    ║`);
   console.log(`╚═══════════════════════════════════════╝\n`);
   console.log(`📍 Port: ${PORT}`);
   console.log(`🔗 Local: http://localhost:${PORT}`);
   console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
+  
+  if (!process.env.IPQUALITYSCORE_API_KEY) {
+    console.warn('⚠️  IPQUALITYSCORE_API_KEY not set! Get one free at https://ipqualityscore.com');
+  } else {
+    console.log('✅ IPQualityScore API key loaded');
+  }
 });
 
 module.exports = app;
