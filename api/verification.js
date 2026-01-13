@@ -534,6 +534,31 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/**
+ * GET /api/test-ip
+ * Test the user's current IP
+ */
+app.get('/api/test-ip', (req, res) => {
+  try {
+    const ip = getClientIp(req);
+    console.log(`🔍 Testing IP: ${ip}`);
+    
+    const isVPN = isVPNorNonResidential(ip);
+    
+    res.json({
+      ip,
+      isVPN,
+      message: isVPN ? '🚫 VPN/Cloud IP detected' : '✅ Residential IP (allowed)',
+    });
+  } catch (error) {
+    console.error('Error testing IP:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
 // ==================== SERVE VERIFICATION PAGE ====================
 
 app.get('/', (req, res) => {
