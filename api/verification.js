@@ -54,71 +54,63 @@ function validateBotSecret(req, res, next) {
 
 // ==================== IP & VPN DETECTION ====================
 
+const VPN_PROVIDERS = [
+  'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'ivpn', 'mullvad',
+  'protonvpn', 'privateinternetaccess', 'windscribe', 'tunnelbear',
+  'hotspotshield', 'bitdefender', 'kaspersky', 'mcafee', 'veepn', 'vyprvpn',
+  'purevpn', 'torguard', 'ipvanish', 'hidemyass', 'astrill', 'zenmate',
+  // Hosting/Datacenter
+  'aws', 'azure', 'digitalocean', 'linode', 'vultr', 'hetzner',
+  'ovh', 'rackspace', 'google cloud', 'heroku', 'vercel', 'render',
+  'railway', 'replit', 'oracle', 'fastly', 'cloudflare', 'akamai',
+  'datacenter', 'hosting', 'vps', 'cloud', 'server',
+];
+
+function isNonResidentialIP(isp, domain, org) {
+  const text = `${isp} ${domain} ${org}`.toLowerCase();
+  return VPN_PROVIDERS.some(provider => text.includes(provider));
+}
+
 async function checkIPReputation(ip) {
   try {
-    // Use AbuseIPDB API (free tier with demo key)
-    const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${ip}&maxAgeInDays=90`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Key': 'demo',
-      },
-    });
-    
+    // Use ip-api.com for basic ISP/org info (no API key needed)
+    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain,mobile`);
     const data = await response.json();
 
-    if (!data.data) {
+    if (data.status !== 'success') {
       return { safe: true, risk: 0, reason: 'Could not verify IP' };
     }
 
     let risk = 0;
     let reasons = [];
-    const abuseScore = data.data.abuseConfidenceScore || 0;
 
-    // High abuse score = likely malicious
-    if (abuseScore >= 75) {
-      risk += 100;
-      reasons.push(`High abuse score: ${abuseScore}%`);
-    } else if (abuseScore >= 50) {
-      risk += 70;
-      reasons.push(`Medium abuse score: ${abuseScore}%`);
-    } else if (abuseScore >= 25) {
-      risk += 40;
-      reasons.push(`Low abuse score: ${abuseScore}%`);
-    }
-
-    // Check usage type for VPN/Proxy
-    const usageType = (data.data.usageType || '').toLowerCase();
-    if (usageType.includes('vpn') || usageType.includes('proxy') || usageType.includes('hosting')) {
-      risk += 85;
-      reasons.push(`VPN/Proxy detected (${usageType})`);
-    }
-
-    // Check if datacenter
-    const isp = (data.data.isp || '').toLowerCase();
-    const domain = (data.data.domain || '').toLowerCase();
-    const datacenterKeywords = ['datacenter', 'hosting', 'cloud', 'aws', 'azure', 'linode', 'digital ocean', 'vps'];
+    // Check if it's a VPN/Hosting provider
+    const isNonRes = isNonResidentialIP(data.isp || '', data.domain || '', data.org || '');
     
-    if (datacenterKeywords.some(kw => isp.includes(kw) || domain.includes(kw))) {
-      risk += 70;
-      reasons.push('Datacenter/Hosting IP');
+    if (isNonRes) {
+      risk += 100;
+      reasons.push('VPN/Hosting provider detected');
+    }
+
+    // Mobile is slightly suspicious in bulk signups
+    if (data.mobile) {
+      risk += 15;
+      reasons.push('Mobile IP');
     }
 
     return {
       safe: risk < 50,
       risk,
       reasons,
-      isVPN: risk >= 85,
-      abuseScore,
-      usageType: data.data.usageType,
-      isp: data.data.isp,
-      domain: data.data.domain,
-      countryCode: data.data.countryCode,
+      isVPN: isNonRes,
+      isMobile: data.mobile,
+      isp: data.isp,
+      org: data.org,
+      domain: data.domain,
     };
   } catch (error) {
     console.error('❌ IP reputation check error:', error);
-    // If API fails, allow verification (better than blocking legitimate users)
-    return { safe: true, risk: 0, reason: 'Could not verify IP - allowing' };
+    return { safe: true, risk: 0, reason: 'Could not verify IP' };
   }
 }
 
