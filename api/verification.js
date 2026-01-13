@@ -66,51 +66,60 @@ function validateBotSecret(req, res, next) {
   next();
 }
 
-// ==================== IPQUALITYSCORE VPN DETECTION ====================
+// ==================== ABUSEIPDB VPN DETECTION ====================
 
-async function checkIPWithIPQualityScore(ip) {
+async function checkIPWithAbuseIPDB(ip) {
   try {
-    const apiKey = "ZmfNSd0cNG92JT4MUB2UNG2cY7Q1ffqV";
+    const apiKey = "919ba4faa33735ba9319ee254312d4a8c54d5a1e71bbd5d36d844205dde2f1b3401adf7c938da886";
     
     if (!apiKey) {
-      console.warn('⚠️ IPQUALITYSCORE_API_KEY not set, defaulting to allow');
-      return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
+      console.warn('⚠️ ABUSEIPDB_API_KEY not set, defaulting to allow');
+      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
     }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(
-      `https://ipqualityscore.com/api/json/ip/${apiKey}/${ip}?strictness=1`,
-      { signal: controller.signal }
-    );
+    const response = await fetch('https://api.abuseipdb.com/api/v2/check', {
+      method: 'POST',
+      headers: {
+        'Key': apiKey,
+        'Accept': 'application/json',
+      },
+      body: new URLSearchParams({
+        ipAddress: ip,
+        maxAgeInDays: '90',
+      }),
+      signal: controller.signal,
+    });
 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.warn(`⚠️ IPQualityScore returned ${response.status}`);
-      return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
+      console.warn(`⚠️ AbuseIPDB returned ${response.status}`);
+      return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
     }
 
     const data = await response.json();
+    const ipData = data.data || {};
     
-    console.log(`📊 IPQualityScore for ${ip}:`, {
-      is_vpn: data.is_vpn,
-      is_proxy: data.is_proxy,
-      fraud_score: data.fraud_score,
+    console.log(`📊 AbuseIPDB for ${ip}:`, {
+      isVpn: ipData.isVpn,
+      isProxy: ipData.isProxy,
+      isHosting: ipData.isHosting,
+      abuseScore: ipData.abuseConfidenceScore,
     });
 
     return {
-      isVPN: data.is_vpn || data.is_proxy || false,
-      fraud_score: data.fraud_score || 0,
-      is_residential: data.is_residential || false,
-      isp: data.ISP || 'Unknown',
-      organization: data.organization || 'Unknown',
+      isVPN: ipData.isVpn || ipData.isProxy || ipData.isHosting || false,
+      abuseScore: ipData.abuseConfidenceScore || 0,
+      isp: ipData.isp || 'Unknown',
+      domain: ipData.domain || 'Unknown',
+      usageType: ipData.usageType || 'Unknown',
     };
   } catch (error) {
-    console.error('❌ IPQualityScore check error:', error.message);
-    // On error, allow (better UX than blocking)
-    return { isVPN: false, isproxy: false, is_vpn: false, fraud_score: 0 };
+    console.error('❌ AbuseIPDB check error:', error.message);
+    return { isVPN: false, isProxy: false, isHosting: false, abuseScore: 0 };
   }
 }
 
@@ -249,8 +258,8 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Check IP with IPQualityScore
-    const ipQuality = await checkIPWithIPQualityScore(clientIp);
+    // Check IP with AbuseIPDB
+    const ipQuality = await checkIPWithAbuseIPDB(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
 
     if (ipQuality.isVPN) {
@@ -513,15 +522,15 @@ app.get('/api/test-ip', async (req, res) => {
     const ip = getClientIp(req);
     console.log(`🔍 Testing IP: ${ip}`);
     
-    const ipQuality = await checkIPWithIPQualityScore(ip);
+    const ipQuality = await checkIPWithAbuseIPDB(ip);
     
     res.json({
       ip,
       isVPN: ipQuality.isVPN,
-      fraud_score: ipQuality.fraud_score,
-      is_residential: ipQuality.is_residential,
+      abuseScore: ipQuality.abuseScore,
       isp: ipQuality.isp,
-      organization: ipQuality.organization,
+      domain: ipQuality.domain,
+      usageType: ipQuality.usageType,
       message: ipQuality.isVPN ? '🚫 VPN/Proxy detected' : '✅ Residential IP (allowed)',
     });
   } catch (error) {
@@ -565,10 +574,10 @@ const server = app.listen(PORT, () => {
   console.log(`🔗 Local: http://localhost:${PORT}`);
   console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
   
-  if (!process.env.IPQUALITYSCORE_API_KEY) {
-    console.warn('⚠️  IPQUALITYSCORE_API_KEY not set! Get one free at https://ipqualityscore.com');
+  if (!process.env.ABUSEIPDB_API_KEY) {
+    console.warn('⚠️  ABUSEIPDB_API_KEY not set! Get one free at https://www.abuseipdb.com/register');
   } else {
-    console.log('✅ IPQualityScore API key loaded');
+    console.log('✅ AbuseIPDB API key loaded');
   }
 });
 
