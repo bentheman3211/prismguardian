@@ -59,6 +59,7 @@ const VPN_PROVIDERS = [
   'protonvpn', 'privateinternetaccess', 'windscribe', 'tunnelbear',
   'hotspotshield', 'bitdefender', 'kaspersky', 'mcafee', 'veepn', 'vyprvpn',
   'purevpn', 'torguard', 'ipvanish', 'hidemyass', 'astrill', 'zenmate',
+  'speedify', 'privatevpn', 'vpnarea', 'perfect privacy', 'gloryvpn',
   // Hosting/Datacenter
   'aws', 'azure', 'digitalocean', 'linode', 'vultr', 'hetzner',
   'ovh', 'rackspace', 'google cloud', 'heroku', 'vercel', 'render',
@@ -73,7 +74,7 @@ function isNonResidentialIP(isp, domain, org) {
 
 async function checkIPReputation(ip) {
   try {
-    // Use ip-api.com for basic ISP/org info (no API key needed)
+    // Use ip-api.com for ISP/org info (no API key needed)
     const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain,mobile`);
     const data = await response.json();
 
@@ -88,18 +89,12 @@ async function checkIPReputation(ip) {
     const isNonRes = isNonResidentialIP(data.isp || '', data.domain || '', data.org || '');
     
     if (isNonRes) {
-      risk += 100;
-      reasons.push('VPN/Hosting provider detected');
-    }
-
-    // Mobile is slightly suspicious in bulk signups
-    if (data.mobile) {
-      risk += 15;
-      reasons.push('Mobile IP');
+      risk = 100;
+      reasons.push('Non-residential IP detected (VPN/Hosting/Datacenter)');
     }
 
     return {
-      safe: risk < 50,
+      safe: risk === 0,
       risk,
       reasons,
       isVPN: isNonRes,
