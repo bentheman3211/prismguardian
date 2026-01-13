@@ -541,15 +541,26 @@ app.get('/api/health', (req, res) => {
 app.get('/api/test-ip/:ip', async (req, res) => {
   try {
     const ip = req.params.ip;
+    console.log(`🔍 Testing IP: ${ip}`);
+    
+    const response = await fetch(`https://ip-api.com/json/${ip}?fields=status,isp,org,domain,mobile`);
+    const rawData = await response.json();
+    
+    console.log(`Raw API response:`, rawData);
+    
     const reputation = await checkIPReputation(ip);
     
     res.json({
       ip,
-      ...reputation,
+      rawApiResponse: rawData,
+      reputation,
     });
   } catch (error) {
     console.error('Error testing IP:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
