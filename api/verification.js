@@ -56,61 +56,69 @@ function validateBotSecret(req, res, next) {
 
 async function checkIPReputation(ip) {
   try {
-    // Use IPQualityScore API (free tier - 5000 requests/month)
-    const response = await fetch(`https://ipqualityscore.com/api/json/ip?ip=${ip}&strictness=1&allow_public_access=true`);
+    // Use AbuseIPDB API (free tier with demo key)
+    const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${ip}&maxAgeInDays=90`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Key': 'demo',
+      },
+    });
+    
     const data = await response.json();
 
-    if (!data.success) {
+    if (!data.data) {
       return { safe: true, risk: 0, reason: 'Could not verify IP' };
     }
 
     let risk = 0;
     let reasons = [];
+    const abuseScore = data.data.abuseConfidenceScore || 0;
 
-    // Check for VPN/Proxy - very reliable detection
-    if (data.is_vpn || data.is_proxy) {
+    // High abuse score = likely malicious
+    if (abuseScore >= 75) {
       risk += 100;
-      reasons.push('VPN/Proxy detected');
-    }
-
-    // Check for datacenter/hosting
-    if (data.is_crawler || data.is_datacenter) {
-      risk += 80;
-      reasons.push('Datacenter/Hosting detected');
-    }
-
-    // Check for residential proxy
-    if (data.is_residential_proxy) {
+      reasons.push(`High abuse score: ${abuseScore}%`);
+    } else if (abuseScore >= 50) {
       risk += 70;
-      reasons.push('Residential proxy detected');
+      reasons.push(`Medium abuse score: ${abuseScore}%`);
+    } else if (abuseScore >= 25) {
+      risk += 40;
+      reasons.push(`Low abuse score: ${abuseScore}%`);
     }
 
-    // Check for bot activity
-    if (data.recent_abuse) {
-      risk += 60;
-      reasons.push('Recent abuse reported');
+    // Check usage type for VPN/Proxy
+    const usageType = (data.data.usageType || '').toLowerCase();
+    if (usageType.includes('vpn') || usageType.includes('proxy') || usageType.includes('hosting')) {
+      risk += 85;
+      reasons.push(`VPN/Proxy detected (${usageType})`);
     }
 
-    // Mobile is less suspicious
-    if (data.is_mobile) {
-      risk += 10;
-      reasons.push('Mobile IP');
+    // Check if datacenter
+    const isp = (data.data.isp || '').toLowerCase();
+    const domain = (data.data.domain || '').toLowerCase();
+    const datacenterKeywords = ['datacenter', 'hosting', 'cloud', 'aws', 'azure', 'linode', 'digital ocean', 'vps'];
+    
+    if (datacenterKeywords.some(kw => isp.includes(kw) || domain.includes(kw))) {
+      risk += 70;
+      reasons.push('Datacenter/Hosting IP');
     }
 
     return {
       safe: risk < 50,
       risk,
       reasons,
-      isVPN: data.is_vpn || data.is_proxy,
-      isResidentialProxy: data.is_residential_proxy,
-      isDatacenter: data.is_datacenter,
-      isMobile: data.is_mobile,
-      fraudScore: data.fraud_score,
-      countryCode: data.country_code,
+      isVPN: risk >= 85,
+      abuseScore,
+      usageType: data.data.usageType,
+      isp: data.data.isp,
+      domain: data.data.domain,
+      countryCode: data.data.countryCode,
     };
   } catch (error) {
     console.error('❌ IP reputation check error:', error);
-    return { safe: true, risk: 0, reason: 'Could not verify IP' };
+    // If API fails, allow verification (better than blocking legitimate users)
+    return { safe: true, risk: 0, reason: 'Could not verify IP - allowing' };
   }
 }
 
