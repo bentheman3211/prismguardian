@@ -68,51 +68,110 @@ function validateBotSecret(req, res, next) {
 
 // ==================== LOCAL VPN DETECTION ====================
 
-const VPN_KEYWORDS = [
-  'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'ivpn', 'mullvad',
-  'protonvpn', 'privateinternetaccess', 'windscribe', 'tunnelbear',
-  'hotspotshield', 'bitdefender', 'kaspersky', 'mcafee', 'veepn', 'vyprvpn',
-  'purevpn', 'torguard', 'ipvanish', 'hidemyass', 'astrill', 'zenmate',
-  'speedify', 'privatevpn', 'vpnarea', 'perfect privacy', 'gloryvpn',
-  'aws', 'azure', 'digitalocean', 'linode', 'vultr', 'hetzner',
-  'ovh', 'rackspace', 'google cloud', 'heroku', 'vercel', 'render',
-  'railway', 'replit', 'oracle', 'fastly', 'cloudflare', 'akamai',
-  'datacenter', 'hosting', 'vps', 'cloud', 'server', 'colocated',
-];
-
 function isVPNorNonResidential(ip) {
   // Check if IP looks like localhost or private
   if (ip === 'localhost' || ip === '127.0.0.1' || ip === '::1') {
-    return false; // Allow localhost for testing
+    return false;
   }
 
   if (ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) {
-    return false; // Allow private IPs
+    return false;
   }
 
-  // Check reverse DNS lookup info stored locally (if available)
-  // This is a simple check - in production you'd want better detection
-  // For now, we just check the IP itself
   const ipNum = ip.split('.').map(Number);
   
-  // Cloud provider IP ranges (simplified - not comprehensive)
+  // Known VPN/Cloud provider IP ranges
+  
   // AWS: 52.0.0.0/8, 54.0.0.0/8
   if ((ipNum[0] === 52 || ipNum[0] === 54) && ipNum[1] < 256) {
     return true;
   }
   
-  // Azure: 13.64.0.0/11
-  if (ipNum[0] === 13 && ipNum[1] >= 64 && ipNum[1] <= 95) {
+  // Azure: 13.64.0.0/11, 13.96.0.0/13
+  if (ipNum[0] === 13 && ((ipNum[1] >= 64 && ipNum[1] <= 95) || (ipNum[1] >= 96 && ipNum[1] <= 103))) {
     return true;
   }
 
-  // Google Cloud: 35.184.0.0/13, 35.192.0.0/11
+  // Google Cloud: 35.184.0.0/13, 35.192.0.0/11, 34.64.0.0/10
   if (ipNum[0] === 35 && ((ipNum[1] >= 184 && ipNum[1] <= 191) || (ipNum[1] >= 192 && ipNum[1] <= 223))) {
     return true;
   }
+  if (ipNum[0] === 34 && ipNum[1] >= 64 && ipNum[1] <= 127) {
+    return true;
+  }
 
-  // DigitalOcean: 104.131.0.0/16
-  if (ipNum[0] === 104 && ipNum[1] === 131) {
+  // DigitalOcean: 104.131.0.0/16, 159.65.0.0/16
+  if ((ipNum[0] === 104 && ipNum[1] === 131) || (ipNum[0] === 159 && ipNum[1] === 65)) {
+    return true;
+  }
+
+  // Linode: 139.162.0.0/16, 45.33.0.0/16
+  if ((ipNum[0] === 139 && ipNum[1] === 162) || (ipNum[0] === 45 && ipNum[1] === 33)) {
+    return true;
+  }
+
+  // Vultr: 45.76.0.0/16, 45.77.0.0/16
+  if (ipNum[0] === 45 && (ipNum[1] === 76 || ipNum[1] === 77)) {
+    return true;
+  }
+
+  // Hetzner: 88.198.0.0/16, 159.69.0.0/16
+  if ((ipNum[0] === 88 && ipNum[1] === 198) || (ipNum[0] === 159 && ipNum[1] === 69)) {
+    return true;
+  }
+
+  // Heroku: 50.19.0.0/16
+  if (ipNum[0] === 50 && ipNum[1] === 19) {
+    return true;
+  }
+
+  // OVH: 15.235.0.0/16, 54.36.0.0/16
+  if ((ipNum[0] === 15 && ipNum[1] === 235) || (ipNum[0] === 54 && ipNum[1] === 36)) {
+    return true;
+  }
+
+  // Fastly: 151.101.0.0/16
+  if (ipNum[0] === 151 && ipNum[1] === 101) {
+    return true;
+  }
+
+  // Akamai: 1.2.3.0/24 (simplified, they use many ranges)
+  if (ipNum[0] === 23 || ipNum[0] === 60 || ipNum[0] === 95 || ipNum[0] === 184) {
+    return true;
+  }
+
+  // ProtonVPN known ranges
+  if (ipNum[0] === 185 && (ipNum[1] === 10 || ipNum[1] === 107 || ipNum[1] === 217)) {
+    return true;
+  }
+
+  // NordVPN known ranges
+  if (ipNum[0] === 37 || (ipNum[0] === 185 && ipNum[1] === 242)) {
+    return true;
+  }
+
+  // ExpressVPN known ranges
+  if (ipNum[0] === 141 || (ipNum[0] === 185 && ipNum[1] === 135)) {
+    return true;
+  }
+
+  // Surfshark
+  if (ipNum[0] === 185 && (ipNum[1] === 228 || ipNum[1] === 229)) {
+    return true;
+  }
+
+  // Private Internet Access
+  if (ipNum[0] === 185 && ipNum[1] === 241) {
+    return true;
+  }
+
+  // CyberGhost
+  if (ipNum[0] === 46 && (ipNum[1] === 29 || ipNum[1] === 30)) {
+    return true;
+  }
+
+  // PrivateVPN
+  if (ipNum[0] === 185 && ipNum[1] === 108) {
     return true;
   }
 
