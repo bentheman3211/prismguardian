@@ -1,636 +1,722 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PrismGuardian - Verification</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html, body {
-            width: 100%;
-            height: 100%;
-        }
-
-        body {
-            font-family: 'Courier New', monospace;
-            background: #000;
-            overflow-x: hidden;
-            cursor: crosshair;
-            position: relative;
-        }
-
-        /* Animated grid background */
-        .grid-bg {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(0deg, transparent 24%, rgba(255, 0, 0, 0.1) 25%, rgba(255, 0, 0, 0.1) 26%, transparent 27%, transparent 74%, rgba(255, 0, 0, 0.1) 75%, rgba(255, 0, 0, 0.1) 76%, transparent 77%, transparent),
-                linear-gradient(90deg, transparent 24%, rgba(255, 0, 0, 0.1) 25%, rgba(255, 0, 0, 0.1) 26%, transparent 27%, transparent 74%, rgba(255, 0, 0, 0.1) 75%, rgba(255, 0, 0, 0.1) 76%, transparent 77%, transparent);
-            background-size: 50px 50px;
-            animation: moveGrid 20s linear infinite;
-            pointer-events: none;
-            z-index: 1;
-        }
-
-        @keyframes moveGrid {
-            0% { transform: translateY(0); }
-            100% { transform: translateY(50px); }
-        }
-
-        /* Floating circles */
-        .circle {
-            position: fixed;
-            border-radius: 50%;
-            background: radial-gradient(circle at 30% 30%, #ff1744, #b71c1c);
-            box-shadow: 0 0 30px rgba(255, 23, 68, 0.8), inset -2px -2px 10px rgba(0, 0, 0, 0.5);
-            pointer-events: none;
-            animation: floatUp linear infinite;
-            z-index: 2;
-            border: 2px solid rgba(255, 23, 68, 0.6);
-        }
-
-        @keyframes floatUp {
-            to {
-                transform: translateY(-120vh);
-                opacity: 0;
-            }
-        }
-
-        .wrapper {
-            position: relative;
-            z-index: 10;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 40px 20px;
-        }
-
-        .container {
-            background: linear-gradient(135deg, rgba(10, 10, 10, 0.95) 0%, rgba(20, 10, 10, 0.95) 100%);
-            box-shadow: 
-                0 0 60px rgba(255, 23, 68, 0.5),
-                0 0 100px rgba(255, 23, 68, 0.3),
-                inset 0 0 60px rgba(255, 23, 68, 0.1);
-            padding: 50px;
-            max-width: 600px;
-            width: 100%;
-            border: 3px solid rgba(255, 23, 68, 0.5);
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-
-        .logo {
-            font-size: 70px;
-            margin-bottom: 15px;
-            animation: pulse 3s ease-in-out infinite;
-            filter: drop-shadow(0 0 30px rgba(255, 23, 68, 0.8));
-        }
-
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-
-        h1 {
-            color: #ff1744;
-            font-size: 40px;
-            margin-bottom: 10px;
-            text-shadow: 0 0 30px rgba(255, 23, 68, 0.8);
-            letter-spacing: 2px;
-            font-weight: bold;
-        }
-
-        .subtitle {
-            color: #ff6b6b;
-            font-size: 14px;
-            text-shadow: 0 0 10px rgba(255, 23, 68, 0.5);
-        }
-
-        .scanner {
-            width: 100%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, #ff1744, transparent);
-            margin: 25px 0;
-            animation: scan 2s ease-in-out infinite;
-        }
-
-        @keyframes scan {
-            0%, 100% { box-shadow: 0 0 20px rgba(255, 23, 68, 0.3); }
-            50% { box-shadow: 0 0 40px rgba(255, 23, 68, 0.8); }
-        }
-
-        .info-box {
-            background: rgba(255, 23, 68, 0.08);
-            border-left: 4px solid #ff1744;
-            padding: 20px;
-            margin-bottom: 30px;
-            font-size: 13px;
-            color: #e0e0e0;
-            line-height: 1.6;
-            border-top: 1px solid rgba(255, 23, 68, 0.2);
-            border-bottom: 1px solid rgba(255, 23, 68, 0.2);
-        }
-
-        .info-box strong {
-            color: #ff1744;
-            text-shadow: 0 0 10px rgba(255, 23, 68, 0.6);
-        }
-
-        .status-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 25px;
-            font-size: 11px;
-        }
-
-        .status-item {
-            background: rgba(255, 23, 68, 0.05);
-            border: 1px solid rgba(255, 23, 68, 0.3);
-            padding: 10px;
-        }
-
-        .status-label {
-            color: #ff1744;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .status-value {
-            color: #aaa;
-            font-family: monospace;
-            word-break: break-all;
-            font-size: 10px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 10px;
-            color: #ff1744;
-            font-weight: bold;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .hcaptcha-container {
-            margin-bottom: 25px;
-            display: flex;
-            justify-content: center;
-            background: rgba(255, 23, 68, 0.03);
-            padding: 15px;
-            border: 2px solid rgba(255, 23, 68, 0.3);
-        }
-
-        button {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #ff1744 0%, #cc0000 100%);
-            color: #000;
-            border: 3px solid #ff1744;
-            font-size: 14px;
-            font-weight: 900;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 0 30px rgba(255, 23, 68, 0.6);
-            position: relative;
-            overflow: hidden;
-        }
-
-        button::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-            transition: left 0.5s;
-        }
-
-        button:hover:not(:disabled)::before {
-            left: 100%;
-        }
-
-        button:hover:not(:disabled) {
-            transform: translateY(-3px);
-            box-shadow: 0 0 50px rgba(255, 23, 68, 0.9);
-        }
-
-        button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .status-message {
-            margin-top: 20px;
-            padding: 12px;
-            text-align: center;
-            font-size: 12px;
-            display: none;
-            border: 2px solid rgba(255, 23, 68, 0.3);
-            font-weight: bold;
-        }
-
-        .status-message.success {
-            background: rgba(76, 175, 80, 0.1);
-            color: #66bb6a;
-            border-color: rgba(76, 175, 80, 0.5);
-            display: block;
-        }
-
-        .status-message.error {
-            background: rgba(255, 23, 68, 0.1);
-            color: #ff5252;
-            border-color: rgba(255, 23, 68, 0.5);
-            display: block;
-        }
-
-        .status-message.loading {
-            background: rgba(100, 150, 255, 0.1);
-            color: #64b5f6;
-            border-color: rgba(100, 150, 255, 0.5);
-            display: block;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(100, 150, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: #64b5f6;
-            animation: spin 0.8s linear infinite;
-            margin-right: 8px;
-            vertical-align: middle;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .footer {
-            text-align: center;
-            margin-top: 30px;
-            font-size: 10px;
-            color: #666;
-            border-top: 1px solid rgba(255, 23, 68, 0.2);
-            padding-top: 15px;
-        }
-
-        .footer a {
-            color: #ff1744;
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            color: #ff5252;
-        }
-
-        /* Success Modal */
-        .success-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 2000;
-        }
-
-        .success-modal.show {
-            display: flex;
-            animation: fadeIn 0.5s ease-in;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .success-content {
-            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1) 0%, rgba(56, 142, 60, 0.1) 100%);
-            border: 3px solid #4caf50;
-            padding: 50px 40px;
-            text-align: center;
-            max-width: 450px;
-            box-shadow: 0 0 60px rgba(76, 175, 80, 0.5);
-            animation: slideIn 0.5s ease-out;
-        }
-
-        .error-content {
-            background: linear-gradient(135deg, rgba(255, 23, 68, 0.1) 0%, rgba(200, 0, 0, 0.1) 100%);
-            border: 3px solid #ff1744;
-            padding: 50px 40px;
-            text-align: center;
-            max-width: 450px;
-            box-shadow: 0 0 60px rgba(255, 23, 68, 0.5);
-            animation: slideIn 0.5s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: scale(0.8);
-                opacity: 0;
-            }
-            to {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .success-icon {
-            font-size: 80px;
-            margin-bottom: 20px;
-            animation: scaleIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        @keyframes scaleIn {
-            from { transform: scale(0); }
-            to { transform: scale(1); }
-        }
-
-        .success-content h2 {
-            color: #4caf50;
-            font-size: 28px;
-            margin-bottom: 12px;
-            text-shadow: 0 0 20px rgba(76, 175, 80, 0.6);
-        }
-
-        .error-content h2 {
-            color: #ff1744;
-            font-size: 28px;
-            margin-bottom: 12px;
-            text-shadow: 0 0 20px rgba(255, 23, 68, 0.6);
-        }
-
-        .success-content p,
-        .error-content p {
-            color: #e0e0e0;
-            font-size: 13px;
-            line-height: 1.6;
-            margin-bottom: 20px;
-        }
-
-        .countdown {
-            color: #4caf50;
-            font-size: 24px;
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
-        }
-
-        .error-countdown {
-            color: #ff1744;
-            font-size: 24px;
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(255, 23, 68, 0.8);
-        }
-
-        @media (max-width: 600px) {
-            .container {
-                padding: 30px 20px;
-            }
-
-            h1 {
-                font-size: 32px;
-            }
-
-            .logo {
-                font-size: 50px;
-            }
-
-            .status-info {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="grid-bg"></div>
-
-    <div class="wrapper">
-        <div class="container">
-            <div class="header">
-                <div class="logo">🛡️</div>
-                <h1>PRISM GUARDIAN</h1>
-                <p class="subtitle">∿ VERIFICATION PROTOCOL ∿</p>
-                <div class="scanner"></div>
-            </div>
-
-            <div class="info-box">
-                <strong>⚠️ RAID DETECTED</strong><br>
-                Suspicious activity identified. Complete verification to regain access.
-            </div>
-
-            <div class="status-info">
-                <div class="status-item">
-                    <div class="status-label">USER</div>
-                    <div class="status-value" id="displayUserId">LOADING</div>
-                </div>
-                <div class="status-item">
-                    <div class="status-label">GUILD</div>
-                    <div class="status-value" id="displayGuildId">LOADING</div>
-                </div>
-            </div>
-
-            <form id="verificationForm">
-                <div class="form-group">
-                    <label>► Complete hCaptcha</label>
-                    <div class="hcaptcha-container">
-                        <div class="h-captcha" data-sitekey="f2ea26ac-31a4-4516-8244-4f4e697c788a"></div>
-                    </div>
-                </div>
-
-                <button type="submit" id="submitBtn">► VERIFY</button>
-
-                <div class="status-message" id="statusMessage"></div>
-            </form>
-
-            <div class="footer">
-                <p>Made with ❤️ by BenScripts • PrismGuardian v1.0</p>
-            </div>
-        </div>
-    </div>
-
-    <!-- Success Modal -->
-    <div class="success-modal" id="successModal">
-        <div class="success-content">
-            <div class="success-icon">✅</div>
-            <h2>VERIFIED</h2>
-            <p>Identity confirmed. You may now return to the server.</p>
-            <div class="countdown" id="countdown">Closing in 5...</div>
-        </div>
-    </div>
-
-    <!-- Error Modal -->
-    <div class="success-modal" id="errorModal">
-        <div class="error-content">
-            <div class="success-icon">❌</div>
-            <h2>VERIFICATION FAILED</h2>
-            <p id="errorMessage">Verification failed. Please try again or contact support.</p>
-            <div class="error-countdown" id="errorCountdown">Closing in 5...</div>
-        </div>
-    </div>
-
-    <!-- hCaptcha Script -->
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-
-    <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('userId');
-        const guildId = urlParams.get('guildId');
-
-        document.getElementById('displayUserId').textContent = userId || 'NOT PROVIDED';
-        document.getElementById('displayGuildId').textContent = guildId || 'NOT PROVIDED';
-
-        const form = document.getElementById('verificationForm');
-        const statusMessage = document.getElementById('statusMessage');
-        const submitBtn = document.getElementById('submitBtn');
-
-        if (!userId || !guildId) {
-            showMessage('❌ MISSING PARAMETERS', 'error');
-            submitBtn.disabled = true;
-        }
-
-        // Floating circles
-        const mousePos = { x: 0, y: 0 };
-        document.addEventListener('mousemove', (e) => {
-            mousePos.x = e.clientX;
-            mousePos.y = e.clientY;
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+app.use(express.static(path.join(__dirname, '../public')));
+
+// In-memory storage
+const verificationData = new Map();
+const quarantineData = new Map();
+const ipDatabase = new Map();
+const requestCounts = new Map();
+
+// ==================== RATE LIMITING ====================
+
+function checkRateLimit(ip, maxRequests = 10, timeWindowMs = 60000) {
+  const now = Date.now();
+  
+  if (!requestCounts.has(ip)) {
+    requestCounts.set(ip, []);
+  }
+  
+  const requests = requestCounts.get(ip);
+  
+  // Remove old requests outside the time window
+  const validRequests = requests.filter(timestamp => now - timestamp < timeWindowMs);
+  requestCounts.set(ip, validRequests);
+  
+  // Check if limit exceeded
+  if (validRequests.length >= maxRequests) {
+    return false;
+  }
+  
+  // Add current request
+  validRequests.push(now);
+  return true;
+}
+
+// ==================== UTILITY: Get Client IP ====================
+
+function getClientIp(req) {
+  return (
+    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    req.headers['cf-connecting-ip'] ||
+    req.headers['x-real-ip'] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    req.ip ||
+    '0.0.0.0'
+  ).replace(/^::ffff:/, '');
+}
+
+// ==================== HCAPTCHA VERIFICATION ====================
+
+async function verifyHcaptcha(token, remoteIp) {
+  try {
+    const response = await fetch('https://hcaptcha.com/siteverify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        secret: process.env.HCAPTCHA_SECRET,
+        response: token,
+        remoteip: remoteIp || '0.0.0.0',
+      }),
+    });
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('❌ hCaptcha verification error:', error);
+    return false;
+  }
+}
+
+// ==================== AUTHORIZATION MIDDLEWARE ====================
+
+function validateBotSecret(req, res, next) {
+  const secret = req.headers['x-bot-secret'];
+  if (secret !== process.env.BOT_API_SECRET) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized - Invalid bot secret',
+    });
+  }
+  next();
+}
+
+// ==================== VPN DETECTION (IP-API - UNLIMITED FREE) ====================
+
+async function checkIPWithMultipleSources(ip) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    // IP-API: 45 req/min, 144,000/day - most generous free tier
+    const response = await fetch(
+      `http://ip-api.com/json/${ip}?fields=status,isp,org,reverse,mobile,proxy,query`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return {
+        isVPN: false,
+        isProxy: false,
+        isHosting: false,
+        abuseScore: 0,
+        isp: 'Unknown',
+        domain: 'Unknown',
+        usageType: 'Unknown',
+        source: 'none',
+        detectionMethods: []
+      };
+    }
+
+    const data = await response.json();
+
+    if (data.status !== 'success') {
+      console.warn(`⚠️ IP-API failed for ${ip}: ${data.message}`);
+      return {
+        isVPN: false,
+        isProxy: false,
+        isHosting: false,
+        abuseScore: 0,
+        isp: 'Unknown',
+        domain: 'Unknown',
+        usageType: 'Unknown',
+        source: 'none',
+        detectionMethods: []
+      };
+    }
+
+    const detectionMethods = [];
+    const orgLower = (data.org || '').toLowerCase();
+    const ispLower = (data.isp || '').toLowerCase();
+
+    let isVPN = data.proxy === true;
+    let isHosting = false;
+
+    // VPN services pattern matching
+    const vpnPatterns = [
+      'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'windscribe',
+      'private internet access', 'protonvpn', 'hide.me', 'ipvanish',
+      'hotspot shield', 'tunnelbear', 'mullvad', 'wireguard'
+    ];
+
+    // Hosting/datacenter pattern matching
+    const hostingPatterns = [
+      'aws', 'amazon', 'azure', 'google cloud', 'digitalocean', 'linode',
+      'vultr', 'hetzner', 'ovh', 'scaleway', 'oracle', 'ibm cloud',
+      'fastly', 'cloudflare', 'akamai', 'softlayer', 'equinix'
+    ];
+
+    if (vpnPatterns.some(p => orgLower.includes(p) || ispLower.includes(p))) {
+      isVPN = true;
+      detectionMethods.push('vpn-pattern');
+    }
+
+    if (hostingPatterns.some(p => orgLower.includes(p) || ispLower.includes(p))) {
+      isHosting = true;
+      detectionMethods.push('hosting-pattern');
+      isVPN = true;
+    }
+
+    // Generic datacenter keywords
+    const datacenterKeywords = ['datacenter', 'hosting', 'vps', 'server', 'cloud', 'reseller'];
+    if (datacenterKeywords.some(k => ispLower.includes(k) || orgLower.includes(k))) {
+      isVPN = true;
+      detectionMethods.push('datacenter-keyword');
+    }
+
+    const result = {
+      isVPN,
+      isProxy: data.proxy === true,
+      isHosting,
+      abuseScore: 0,
+      isp: data.isp || 'Unknown',
+      domain: data.reverse || 'Unknown',
+      usageType: isVPN ? 'non-residential' : 'residential',
+      org: data.org || 'Unknown',
+      source: 'ip-api',
+      detectionMethods: detectionMethods.length > 0 ? detectionMethods : ['native-proxy-field']
+    };
+
+    console.log(`📊 IP-API Check for ${ip}:`, {
+      isVPN: result.isVPN,
+      methods: result.detectionMethods,
+      isp: result.isp,
+      org: result.org,
+      proxy: data.proxy
+    });
+
+    return result;
+
+  } catch (error) {
+    console.error('❌ IP-API check error:', error.message);
+    return {
+      isVPN: false,
+      isProxy: false,
+      isHosting: false,
+      abuseScore: 0,
+      isp: 'Unknown',
+      domain: 'Unknown',
+      usageType: 'Unknown',
+      source: 'error',
+      detectionMethods: []
+    };
+  }
+}
+
+// ==================== IP TRACKING & RISK ANALYSIS ====================
+
+function trackIP(ip, userId, guildId) {
+  if (!ipDatabase.has(ip)) {
+    ipDatabase.set(ip, {
+      users: [],
+      firstSeen: Date.now(),
+      accounts: {},
+      isVPN: false,
+    });
+  }
+
+  const ipData = ipDatabase.get(ip);
+  if (!ipData.users.includes(userId)) {
+    ipData.users.push(userId);
+  }
+
+  return ipData;
+}
+
+function getIPRiskScore(ip, guildId) {
+  const ipData = ipDatabase.get(ip);
+  if (!ipData) return 0;
+
+  // Count recent verifications from same IP in this guild
+  const recentVerifications = [];
+  for (const userId of ipData.users) {
+    const userData = verificationData.get(userId);
+    if (userData && userData.guildId === guildId) {
+      const timeDiff = Date.now() - userData.timestamp;
+      // Within last 10 minutes = suspicious
+      if (timeDiff < 10 * 60 * 1000) {
+        recentVerifications.push(userData);
+      }
+    }
+  }
+
+  // Multiple accounts from same IP in short time = raid indicator
+  if (recentVerifications.length >= 5) return 95;
+  if (recentVerifications.length >= 4) return 85;
+  if (recentVerifications.length >= 3) return 75;
+  if (recentVerifications.length >= 2) return 60;
+
+  return 0;
+}
+
+function checkGuildIPComposition(guildId) {
+  const guildUsers = [];
+  const vpnIPs = new Set();
+  const residentialIPs = new Set();
+
+  for (const [userId, userData] of verificationData.entries()) {
+    if (userData.guildId === guildId) {
+      guildUsers.push(userData);
+      if (userData.isVPN) {
+        vpnIPs.add(userData.ip);
+      } else {
+        residentialIPs.add(userData.ip);
+      }
+    }
+  }
+
+  if (guildUsers.length < 3) {
+    return { suspicious: false, vpnPercent: 0 };
+  }
+
+  const vpnPercent = (vpnIPs.size / guildUsers.length) * 100;
+  const isSuspicious = vpnPercent > 60 || vpnIPs.size >= 5;
+
+  return {
+    suspicious: isSuspicious,
+    vpnPercent: Math.round(vpnPercent),
+    totalUsers: guildUsers.length,
+    vpnCount: vpnIPs.size,
+    residentialCount: residentialIPs.size,
+  };
+}
+
+// ==================== VERIFICATION ENDPOINTS ====================
+
+/**
+ * GET /api/verification-status/:userId
+ * Check if a user has completed verification
+ */
+app.get('/api/verification-status/:userId', (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const userData = verificationData.get(userId);
+
+    if (!userData) {
+      return res.json({
+        userId,
+        verified: false,
+        reason: 'No verification record found',
+      });
+    }
+
+    const isExpired = Date.now() - userData.timestamp > 24 * 60 * 60 * 1000;
+
+    return res.json({
+      userId,
+      verified: !isExpired && userData.verified,
+      verificationTime: userData.timestamp,
+      guildId: userData.guildId,
+      isExpired,
+      expiresIn: Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - userData.timestamp)),
+      wasVPN: userData.isVPN || false,
+    });
+  } catch (error) {
+    console.error('❌ Error checking verification status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/verify
+ * Verify a user with hCaptcha token
+ * Body: { userId, guildId, token }
+ */
+app.post('/api/verify', async (req, res) => {
+  try {
+    const { userId, guildId, token } = req.body;
+    const clientIp = getClientIp(req);
+
+    if (!userId || !guildId || !token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: userId, guildId, token',
+      });
+    }
+
+    console.log(`🔄 Verifying user ${userId} in guild ${guildId} from IP ${clientIp}`);
+
+    // Validate hCaptcha token
+    const isValid = await verifyHcaptcha(token, clientIp);
+
+    if (!isValid) {
+      console.log(`❌ hCaptcha failed for user ${userId}`);
+      return res.status(400).json({
+        success: false,
+        error: 'hCaptcha verification failed',
+      });
+    }
+
+    // Rate limit: max 10 verification attempts per IP per minute
+    if (!checkRateLimit(clientIp, 10, 60000)) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many verification attempts. Please wait a minute and try again.',
+      });
+    }
+
+    // Check IP with new unlimited free VPN detection
+    const ipQuality = await checkIPWithMultipleSources(clientIp);
+    console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
+    console.log(`🔍 DEBUG - isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting}`);
+
+    // Determine if VPN/Proxy
+    const isVPN = ipQuality.isVPN || ipQuality.isHosting;
+    console.log(`🔍 DEBUG - Final isVPN check: ${isVPN}`);
+
+    // BLOCK ALL VPNs
+    if (isVPN) {
+      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy (isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting})`);
+      return res.status(403).json({
+        success: false,
+        error: 'VPN/Proxy usage is not allowed. Please disconnect and try again.',
+        riskLevel: 'high',
+      });
+    }
+
+    // Track this IP
+    const ipData = trackIP(clientIp, userId, guildId);
+    const ipRiskScore = getIPRiskScore(clientIp, guildId);
+
+    // Mark user as verified
+    verificationData.set(userId, {
+      verified: true,
+      timestamp: Date.now(),
+      guildId,
+      ip: clientIp,
+      isVPN: isVPN,
+      abuseScore: ipQuality.abuseScore || 0,
+      isp: ipQuality.isp,
+      usageType: ipQuality.usageType,
+      ipRiskScore: ipRiskScore,
+      detectionMethods: ipQuality.detectionMethods,
+      notified: false,
+    });
+
+    // Update IP database
+    if (!ipData.accounts[guildId]) {
+      ipData.accounts[guildId] = [];
+    }
+    ipData.accounts[guildId].push(userId);
+    ipData.isVPN = isVPN;
+
+    // Remove from quarantine if present
+    if (quarantineData.has(userId)) {
+      quarantineData.delete(userId);
+      console.log(`✅ Removed ${userId} from quarantine`);
+    }
+
+    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}${isVPN ? ' (VPN)' : ''}`);
+
+    return res.json({
+      success: true,
+      message: 'Verification successful! You can now use the server.',
+      userId,
+      guildId,
+      verifiedAt: Date.now(),
+      riskLevel: isVPN ? 'medium' : 'low',
+      usingVPN: isVPN,
+      detectionMethods: ipQuality.detectionMethods,
+    });
+  } catch (error) {
+    console.error('❌ Error during verification:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+// ==================== QUARANTINE ENDPOINTS ====================
+
+/**
+ * GET /api/quarantine/:userId
+ * Check if a user is in quarantine
+ */
+app.get('/api/quarantine/:userId', (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const quarantineInfo = quarantineData.get(userId);
+    const verificationInfo = verificationData.get(userId);
+
+    if (!quarantineInfo) {
+      return res.json({
+        userId,
+        quarantined: false,
+        verified: verificationInfo?.verified || false,
+      });
+    }
+
+    return res.json({
+      userId,
+      quarantined: quarantineInfo.quarantined,
+      reason: quarantineInfo.reason,
+      violations: quarantineInfo.violations || 0,
+      quarantinedAt: quarantineInfo.timestamp,
+      guildId: quarantineInfo.guildId,
+      verified: verificationInfo?.verified || false,
+    });
+  } catch (error) {
+    console.error('❌ Error checking quarantine status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/quarantine
+ * Add a user to quarantine (called by bot)
+ * Body: { userId, guildId, reason }
+ */
+app.post('/api/quarantine', validateBotSecret, (req, res) => {
+  try {
+    const { userId, guildId, reason } = req.body;
+
+    if (!userId || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: userId, reason',
+      });
+    }
+
+    quarantineData.set(userId, {
+      quarantined: true,
+      reason,
+      violations: 0,
+      timestamp: Date.now(),
+      guildId,
+    });
+
+    console.log(`🔒 User ${userId} quarantined: ${reason}`);
+
+    return res.json({
+      success: true,
+      message: 'User quarantined',
+      userId,
+      guildId,
+    });
+  } catch (error) {
+    console.error('❌ Error quarantining user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /api/quarantine/:userId/violation
+ * Record a violation for a quarantined user
+ */
+app.post('/api/quarantine/:userId/violation', validateBotSecret, (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const quarantineInfo = quarantineData.get(userId);
+
+    if (!quarantineInfo) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not in quarantine',
+      });
+    }
+
+    quarantineInfo.violations++;
+    console.log(`⚠️ Violation recorded for ${userId}. Count: ${quarantineInfo.violations}`);
+
+    return res.json({
+      success: true,
+      userId,
+      violations: quarantineInfo.violations,
+      shouldBan: quarantineInfo.violations >= 2,
+    });
+  } catch (error) {
+    console.error('❌ Error recording violation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /api/quarantine/:userId/release
+ * Release a user from quarantine
+ */
+app.post('/api/quarantine/:userId/release', validateBotSecret, (req, res) => {
+  try {
+    const userId = req.params.userId;
+    quarantineData.delete(userId);
+    console.log(`✅ User ${userId} released from quarantine`);
+
+    return res.json({
+      success: true,
+      message: 'User released from quarantine',
+      userId,
+    });
+  } catch (error) {
+    console.error('❌ Error releasing user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+// ==================== RAID STATUS ENDPOINTS ====================
+
+/**
+ * GET /api/raid-status/:guildId
+ * Get comprehensive raid status for a guild
+ */
+app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
+  try {
+    const guildId = req.params.guildId;
+    const quarantinedUsers = [];
+    const guildComposition = checkGuildIPComposition(guildId);
+
+    for (const [userId, info] of quarantineData.entries()) {
+      if (info.guildId === guildId) {
+        quarantinedUsers.push({
+          userId,
+          reason: info.reason,
+          violations: info.violations,
+          quarantinedAt: info.timestamp,
         });
+      }
+    }
 
-        function createCircle() {
-            const circle = document.createElement('div');
-            circle.classList.add('circle');
-            const size = Math.random() * 120 + 20;
-            circle.style.width = size + 'px';
-            circle.style.height = size + 'px';
-            const startX = Math.random() * window.innerWidth;
-            const startY = window.innerHeight + 100;
-            circle.style.left = startX + 'px';
-            circle.style.top = startY + 'px';
-            const duration = Math.random() * 7 + 5;
-            circle.style.animationDuration = duration + 's';
-            const delay = Math.random() * 4;
-            circle.style.animationDelay = delay + 's';
-            document.body.appendChild(circle);
+    return res.json({
+      guildId,
+      quarantinedCount: quarantinedUsers.length,
+      quarantinedUsers,
+      composition: guildComposition,
+      raidDetected: guildComposition.suspicious,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    console.error('❌ Error getting raid status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-            const interval = setInterval(() => {
-                const rect = circle.getBoundingClientRect();
-                const cx = rect.left + rect.width / 2;
-                const cy = rect.top + rect.height / 2;
-                const dx = mousePos.x - cx;
-                const dy = mousePos.y - cy;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                if (distance < 500 && rect.top > -150) {
-                    const speed = 2.5;
-                    circle.style.transform = `translate(${(dx / distance) * speed}px, ${(dy / distance) * speed}px)`;
-                }
-            }, 50);
+/**
+ * GET /api/get-verified-users/:guildId
+ * Get list of users who just verified (for polling)
+ */
+app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
+  try {
+    const guildId = req.params.guildId;
+    const verifiedUsers = [];
 
-            setTimeout(() => {
-                clearInterval(interval);
-                circle.remove();
-            }, (duration + delay) * 1000);
-        }
-
-        setInterval(createCircle, 1000);
-        for (let i = 0; i < 2; i++) {
-            setTimeout(createCircle, i * 150);
-        }
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const token = hcaptcha.getResponse();
-            if (!token) {
-                showMessage('❌ COMPLETE CAPTCHA', 'error');
-                return;
-            }
-            submitBtn.disabled = true;
-            showMessage('<span class="loading-spinner"></span> VERIFYING', 'loading');
-
-            try {
-                const response = await fetch('/api/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, guildId, token }),
-                });
-                const data = await response.json();
-                
-                if (response.ok && data.success) {
-                    // Success
-                    document.querySelector('.wrapper').style.display = 'none';
-                    document.getElementById('successModal').classList.add('show');
-                    startCountdown();
-                } else {
-                    // Error - show message under button
-                    showMessage('❌ ' + (data.error || 'Verification failed. Please try again.'), 'error');
-                    submitBtn.disabled = false;
-                    hcaptcha.reset();
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                showMessage('❌ Network error. Please try again.', 'error');
-                submitBtn.disabled = false;
-                hcaptcha.reset();
-            }
+    for (const [userId, userData] of verificationData.entries()) {
+      if (userData.guildId === guildId && userData.verified && !userData.notified) {
+        verifiedUsers.push({
+          userId,
+          verifiedAt: userData.timestamp,
+          riskLevel: userData.ipRiskScore >= 60 ? 'medium' : 'low',
+          usingVPN: userData.isVPN,
         });
+        userData.notified = true;
+      }
+    }
 
-        function showMessage(text, type) {
-            statusMessage.innerHTML = text;
-            statusMessage.className = 'status-message ' + type;
-        }
+    return res.json({
+      guildId,
+      verifiedUsers,
+      count: verifiedUsers.length,
+    });
+  } catch (error) {
+    console.error('❌ Error getting verified users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-        function startCountdown() {
-            let count = 5;
-            const countdownEl = document.getElementById('countdown');
-            
-            const interval = setInterval(() => {
-                countdownEl.textContent = `Closing in ${count}...`;
-                count--;
-                
-                if (count < 0) {
-                    clearInterval(interval);
-                    countdownEl.textContent = 'You can close the site now';
-                }
-            }, 1000);
-        }
+// ==================== HEALTH CHECK ====================
 
-        function startErrorCountdown() {
-            let count = 5;
-            const countdownEl = document.getElementById('errorCountdown');
-            
-            const interval = setInterval(() => {
-                countdownEl.textContent = `Closing in ${count}...`;
-                count--;
-                
-                if (count < 0) {
-                    clearInterval(interval);
-                    countdownEl.textContent = 'You can close the site now';
-                }
-            }, 1000);
-        }
-    </script>
-</body>
-</html>
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: Date.now(),
+    uptime: process.uptime(),
+  });
+});
+
+/**
+ * GET /api/test-ip
+ * Test the user's current IP
+ */
+app.get('/api/test-ip', async (req, res) => {
+  try {
+    const ip = getClientIp(req);
+    console.log(`🔍 Testing IP: ${ip}`);
+    
+    const ipQuality = await checkIPWithMultipleSources(ip);
+    
+    res.json({
+      ip,
+      isVPN: ipQuality.isVPN,
+      isHosting: ipQuality.isHosting,
+      abuseScore: ipQuality.abuseScore,
+      isp: ipQuality.isp,
+      org: ipQuality.org,
+      domain: ipQuality.domain,
+      usageType: ipQuality.usageType,
+      detectionMethods: ipQuality.detectionMethods,
+      message: ipQuality.isVPN ? '🚫 VPN/Proxy detected' : '✅ Residential IP (allowed)',
+    });
+  } catch (error) {
+    console.error('Error testing IP:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// ==================== SERVE VERIFICATION PAGE ====================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// ==================== ERROR HANDLING ====================
+
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Endpoint not found',
+  });
+});
+
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal server error',
+  });
+});
+
+// ==================== START SERVER ====================
+
+const PORT = process.env.PORT || 3001;
+const server = app.listen(PORT, () => {
+  console.log(`\n╔═══════════════════════════════════════╗`);
+  console.log(`║  🔐 Verification API Running 🛡️    ║`);
+  console.log(`╚═══════════════════════════════════════╝\n`);
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🔗 Local: http://localhost:${PORT}`);
+  console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
+  
+  console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
+});
+
+module.exports = app;
