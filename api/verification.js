@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -726,8 +727,27 @@ app.get('/verify/:encryptedToken', (req, res) => {
 
     console.log(`✅ Decrypted token - User: ${decoded.userId}, Guild: ${decoded.guildId}`);
     
-    // Redirect to index.html with query parameters
-    return res.redirect(`/?userId=${decoded.userId}&guildId=${decoded.guildId}`);
+    // Read and serve index.html with decoded values injected
+    const indexPath = path.join(__dirname, '../public/index.html');
+    fs.readFile(indexPath, 'utf8', (err, data) => {
+      if (err) {
+        console.error('Error reading index.html:', err);
+        return res.status(500).send('Error loading verification page');
+      }
+      
+      // Inject decoded values into the HTML
+      const html = data.replace(
+        '<script>',
+        `<script>
+        window.verificationData = {
+          userId: '${decoded.userId}',
+          guildId: '${decoded.guildId}'
+        };
+        </script><script>`
+      );
+      
+      res.send(html);
+    });
   } catch (error) {
     console.error('Decrypt error:', error);
     return res.status(400).send(renderError('Invalid verification link'));
@@ -735,7 +755,7 @@ app.get('/verify/:encryptedToken', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  // Serve the index.html file
+  // Serve the index.html file (for backward compatibility with query params)
   const indexPath = path.join(__dirname, '../public/index.html');
   res.sendFile(indexPath, (err) => {
     if (err) {
