@@ -4,9 +4,50 @@ const path = require('path');
 const crypto = require('crypto');
 require('dotenv').config();
 
-const { encryptUrlParams, decryptUrlParams } = require('../utils/urlEncryption');
-
 const app = express();
+
+// ==================== ENCRYPTION/DECRYPTION ====================
+
+const ENCRYPTION_KEY = '349e3756622fd5efb1aa43f50f7f26e74d6ad89da2baec0712fd872dc4fd7883';
+
+function encryptUrlParams(userId, guildId) {
+  try {
+    const data = JSON.stringify({ userId, guildId });
+    const iv = crypto.randomBytes(16);
+    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+    
+    let encrypted = cipher.update(data, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    return iv.toString('hex') + ':' + encrypted;
+  } catch (error) {
+    console.error('❌ Encryption error:', error);
+    return null;
+  }
+}
+
+function decryptUrlParams(encryptedData) {
+  try {
+    const [ivHex, encryptedHex] = encryptedData.split(':');
+    if (!ivHex || !encryptedHex) {
+      console.error('❌ Invalid encrypted data format');
+      return null;
+    }
+    
+    const iv = Buffer.from(ivHex, 'hex');
+    const key = Buffer.from(ENCRYPTION_KEY, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    
+    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return JSON.parse(decrypted);
+  } catch (error) {
+    console.error('❌ Decryption error:', error);
+    return null;
+  }
+}
 
 // Middleware
 app.use(express.json());
@@ -29,17 +70,13 @@ function checkRateLimit(ip, maxRequests = 10, timeWindowMs = 60000) {
   }
   
   const requests = requestCounts.get(ip);
-  
-  // Remove old requests outside the time window
   const validRequests = requests.filter(timestamp => now - timestamp < timeWindowMs);
   requestCounts.set(ip, validRequests);
   
-  // Check if limit exceeded
   if (validRequests.length >= maxRequests) {
     return false;
   }
   
-  // Add current request
   validRequests.push(now);
   return true;
 }
@@ -95,14 +132,13 @@ function validateBotSecret(req, res, next) {
   next();
 }
 
-// ==================== VPN DETECTION (IP-API - UNLIMITED FREE) ====================
+// ==================== VPN DETECTION ====================
 
 async function checkIPWithMultipleSources(ip) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    // IP-API: 45 req/min, 144,000/day - most generous free tier
     const response = await fetch(
       `http://ip-api.com/json/${ip}?fields=status,isp,org,reverse,mobile,proxy,query`,
       { signal: controller.signal }
@@ -147,14 +183,12 @@ async function checkIPWithMultipleSources(ip) {
     let isVPN = data.proxy === true;
     let isHosting = false;
 
-    // VPN services pattern matching
     const vpnPatterns = [
       'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'windscribe',
       'private internet access', 'protonvpn', 'hide.me', 'ipvanish',
       'hotspot shield', 'tunnelbear', 'mullvad', 'wireguard'
     ];
 
-    // Hosting/datacenter pattern matching
     const hostingPatterns = [
       'aws', 'amazon', 'azure', 'google cloud', 'digitalocean', 'linode',
       'vultr', 'hetzner', 'ovh', 'scaleway', 'oracle', 'ibm cloud',
@@ -172,7 +206,6 @@ async function checkIPWithMultipleSources(ip) {
       isVPN = true;
     }
 
-    // Generic datacenter keywords
     const datacenterKeywords = ['datacenter', 'hosting', 'vps', 'server', 'cloud', 'reseller'];
     if (datacenterKeywords.some(k => ispLower.includes(k) || orgLower.includes(k))) {
       isVPN = true;
@@ -242,20 +275,17 @@ function getIPRiskScore(ip, guildId) {
   const ipData = ipDatabase.get(ip);
   if (!ipData) return 0;
 
-  // Count recent verifications from same IP in this guild
   const recentVerifications = [];
   for (const userId of ipData.users) {
     const userData = verificationData.get(userId);
     if (userData && userData.guildId === guildId) {
       const timeDiff = Date.now() - userData.timestamp;
-      // Within last 10 minutes = suspicious
       if (timeDiff < 10 * 60 * 1000) {
         recentVerifications.push(userData);
       }
     }
   }
 
-  // Multiple accounts from same IP in short time = raid indicator
   if (recentVerifications.length >= 5) return 95;
   if (recentVerifications.length >= 4) return 85;
   if (recentVerifications.length >= 3) return 75;
@@ -298,10 +328,6 @@ function checkGuildIPComposition(guildId) {
 
 // ==================== VERIFICATION ENDPOINTS ====================
 
-/**
- * GET /api/verification-status/:userId
- * Check if a user has completed verification
- */
 app.get('/api/verification-status/:userId', (req, res) => {
   try {
     const userId = req.params.userId;
@@ -332,27 +358,21 @@ app.get('/api/verification-status/:userId', (req, res) => {
   }
 });
 
-/**
- * POST /api/verify
- * Verify a user with hCaptcha token
- * Body: { userId, guildId, token }
- */
 app.post('/api/verify', async (req, res) => {
   try {
-    const { userId, guildId, token } = req.body;
+    const { userId, guildId, captchaToken } = req.body;
     const clientIp = getClientIp(req);
 
-    if (!userId || !guildId || !token) {
+    if (!userId || !guildId || !captchaToken) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: userId, guildId, token',
+        error: 'Missing required fields: userId, guildId, captchaToken',
       });
     }
 
     console.log(`🔄 Verifying user ${userId} in guild ${guildId} from IP ${clientIp}`);
 
-    // Validate hCaptcha token
-    const isValid = await verifyHcaptcha(token, clientIp);
+    const isValid = await verifyHcaptcha(captchaToken, clientIp);
 
     if (!isValid) {
       console.log(`❌ hCaptcha failed for user ${userId}`);
@@ -362,7 +382,6 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Rate limit: max 10 verification attempts per IP per minute
     if (!checkRateLimit(clientIp, 10, 60000)) {
       return res.status(429).json({
         success: false,
@@ -370,18 +389,14 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Check IP with new unlimited free VPN detection
     const ipQuality = await checkIPWithMultipleSources(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
-    console.log(`🔍 DEBUG - isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting}`);
 
-    // Determine if VPN/Proxy
     const isVPN = ipQuality.isVPN || ipQuality.isHosting;
-    console.log(`🔍 DEBUG - Final isVPN check: ${isVPN}`);
+    console.log(`🔍 Final isVPN check: ${isVPN}`);
 
-    // BLOCK ALL VPNs
     if (isVPN) {
-      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy (isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting})`);
+      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy`);
       return res.status(403).json({
         success: false,
         error: 'VPN/Proxy usage is not allowed. Please disconnect and try again.',
@@ -389,11 +404,9 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // Track this IP
     const ipData = trackIP(clientIp, userId, guildId);
     const ipRiskScore = getIPRiskScore(clientIp, guildId);
 
-    // Mark user as verified
     verificationData.set(userId, {
       verified: true,
       timestamp: Date.now(),
@@ -408,20 +421,18 @@ app.post('/api/verify', async (req, res) => {
       notified: false,
     });
 
-    // Update IP database
     if (!ipData.accounts[guildId]) {
       ipData.accounts[guildId] = [];
     }
     ipData.accounts[guildId].push(userId);
     ipData.isVPN = isVPN;
 
-    // Remove from quarantine if present
     if (quarantineData.has(userId)) {
       quarantineData.delete(userId);
       console.log(`✅ Removed ${userId} from quarantine`);
     }
 
-    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}${isVPN ? ' (VPN)' : ''}`);
+    console.log(`✅ User ${userId} verified successfully from IP ${clientIp}`);
 
     return res.json({
       success: true,
@@ -444,10 +455,6 @@ app.post('/api/verify', async (req, res) => {
 
 // ==================== QUARANTINE ENDPOINTS ====================
 
-/**
- * GET /api/quarantine/:userId
- * Check if a user is in quarantine
- */
 app.get('/api/quarantine/:userId', (req, res) => {
   try {
     const userId = req.params.userId;
@@ -477,11 +484,6 @@ app.get('/api/quarantine/:userId', (req, res) => {
   }
 });
 
-/**
- * POST /api/quarantine
- * Add a user to quarantine (called by bot)
- * Body: { userId, guildId, reason }
- */
 app.post('/api/quarantine', validateBotSecret, (req, res) => {
   try {
     const { userId, guildId, reason } = req.body;
@@ -518,10 +520,6 @@ app.post('/api/quarantine', validateBotSecret, (req, res) => {
   }
 });
 
-/**
- * POST /api/quarantine/:userId/violation
- * Record a violation for a quarantined user
- */
 app.post('/api/quarantine/:userId/violation', validateBotSecret, (req, res) => {
   try {
     const userId = req.params.userId;
@@ -552,10 +550,6 @@ app.post('/api/quarantine/:userId/violation', validateBotSecret, (req, res) => {
   }
 });
 
-/**
- * POST /api/quarantine/:userId/release
- * Release a user from quarantine
- */
 app.post('/api/quarantine/:userId/release', validateBotSecret, (req, res) => {
   try {
     const userId = req.params.userId;
@@ -578,10 +572,6 @@ app.post('/api/quarantine/:userId/release', validateBotSecret, (req, res) => {
 
 // ==================== RAID STATUS ENDPOINTS ====================
 
-/**
- * GET /api/raid-status/:guildId
- * Get comprehensive raid status for a guild
- */
 app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
   try {
     const guildId = req.params.guildId;
@@ -613,10 +603,6 @@ app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
   }
 });
 
-/**
- * GET /api/get-verified-users/:guildId
- * Get list of users who just verified (for polling)
- */
 app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
   try {
     const guildId = req.params.guildId;
@@ -655,10 +641,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-/**
- * GET /api/test-ip
- * Test the user's current IP
- */
 app.get('/api/test-ip', async (req, res) => {
   try {
     const ip = getClientIp(req);
@@ -689,10 +671,6 @@ app.get('/api/test-ip', async (req, res) => {
 
 // ==================== ENCRYPTED VERIFICATION ENDPOINTS ====================
 
-/**
- * POST /api/generate-verify-token
- * Generate encrypted token for verification link (bot use only)
- */
 app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
   try {
     const { userId, guildId } = req.body;
@@ -704,7 +682,6 @@ app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
       });
     }
 
-    // Generate encrypted token
     const encryptedToken = encryptUrlParams(userId, guildId);
 
     if (!encryptedToken) {
@@ -718,6 +695,7 @@ app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
     const verificationUrl = `${req.protocol}://${host}/verify/${encryptedToken}`;
 
     console.log(`✅ Generated encrypted token for user ${userId} in guild ${guildId}`);
+    console.log(`🔗 URL: ${verificationUrl}`);
 
     return res.json({
       success: true,
@@ -733,20 +711,19 @@ app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
   }
 });
 
-/**
- * GET /verify/:encryptedToken
- * Decrypt token and show verification page
- */
 app.get('/verify/:encryptedToken', (req, res) => {
   try {
     const encryptedToken = req.params.encryptedToken;
+    console.log(`🔓 Decrypting token: ${encryptedToken}`);
+    
     const decoded = decryptUrlParams(encryptedToken);
 
     if (!decoded || !decoded.userId || !decoded.guildId) {
+      console.error('❌ Decryption failed or missing data');
       return res.status(400).send(renderError('Invalid or expired verification link'));
     }
 
-    console.log(`🔓 Decrypted token for user ${decoded.userId} in guild ${decoded.guildId}`);
+    console.log(`✅ Decrypted token - User: ${decoded.userId}, Guild: ${decoded.guildId}`);
 
     return res.send(renderVerificationPage(
       encryptedToken,
@@ -871,7 +848,7 @@ function renderVerificationPage(token, userId, guildId) {
       </div>
       <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
       <script>
-        const token = '${token}';
+        const encryptedToken = '${token}';
         const userId = '${userId}';
         const guildId = '${guildId}';
         let captchaToken = null;
@@ -906,10 +883,9 @@ function renderVerificationPage(token, userId, guildId) {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                token,
-                captchaToken,
                 userId,
-                guildId
+                guildId,
+                captchaToken
               })
             });
             
@@ -945,7 +921,7 @@ function renderVerificationPage(token, userId, guildId) {
 }
 
 function renderError(message) {
-  return \`
+  return `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -979,11 +955,11 @@ function renderError(message) {
     <body>
       <div class="container">
         <h1>❌ Verification Error</h1>
-        <p>\${message}</p>
+        <p>${message}</p>
       </div>
     </body>
     </html>
-  \`;
+  `;
 }
 
 // ==================== SERVE VERIFICATION PAGE ====================
@@ -1011,12 +987,12 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3001;
 const server = app.listen(PORT, () => {
-  console.log(\`\n╔═══════════════════════════════════════╗\`);
-  console.log(\`║  🔐 Verification API Running 🛡️    ║\`);
-  console.log(\`╚═══════════════════════════════════════╝\n\`);
-  console.log(\`📍 Port: \${PORT}\`);
-  console.log(\`🔗 Local: http://localhost:\${PORT}\`);
-  console.log(\`💚 Health: http://localhost:\${PORT}/api/health\n\`);
+  console.log(`\n╔═══════════════════════════════════════╗`);
+  console.log(`║  🔐 Verification API Running 🛡️    ║`);
+  console.log(`╚═══════════════════════════════════════╝\n`);
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🔗 Local: http://localhost:${PORT}`);
+  console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
   
   console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
 });
