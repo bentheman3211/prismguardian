@@ -725,16 +725,24 @@ app.get('/verify/:encryptedToken', (req, res) => {
     }
 
     console.log(`✅ Decrypted token - User: ${decoded.userId}, Guild: ${decoded.guildId}`);
-
-    return res.send(renderVerificationPage(
-      encryptedToken,
-      decoded.userId,
-      decoded.guildId
-    ));
+    
+    // Redirect to index.html with query parameters
+    return res.redirect(`/?userId=${decoded.userId}&guildId=${decoded.guildId}`);
   } catch (error) {
     console.error('Decrypt error:', error);
     return res.status(400).send(renderError('Invalid verification link'));
   }
+});
+
+app.get('/', (req, res) => {
+  // Serve the index.html file
+  const indexPath = path.join(__dirname, '../public/index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      console.error('Error sending index.html:', err);
+      res.status(500).send('Error loading verification page');
+    }
+  });
 });
 
 // ==================== HTML RENDERING ====================
