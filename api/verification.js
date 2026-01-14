@@ -1026,9 +1026,7 @@ function renderError(message) {
 
 // ==================== SERVE VERIFICATION PAGE ====================
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
+// Remove static file serving - Vercel handles public/* separately via vercel.json
 
 // ==================== ERROR HANDLING ====================
 
