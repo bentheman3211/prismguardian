@@ -580,22 +580,20 @@
                 
                 if (response.ok && data.success) {
                     // Success
+                    document.querySelector('.wrapper').style.display = 'none';
                     document.getElementById('successModal').classList.add('show');
-                    form.style.display = 'none';
                     startCountdown();
                 } else {
-                    // Error
-                    document.getElementById('errorModal').classList.add('show');
-                    document.getElementById('errorMessage').textContent = data.error || 'Verification failed. Please try again.';
-                    form.style.display = 'none';
-                    startErrorCountdown();
+                    // Error - show message under button
+                    showMessage('❌ ' + (data.error || 'Verification failed. Please try again.'), 'error');
+                    submitBtn.disabled = false;
+                    hcaptcha.reset();
                 }
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('errorModal').classList.add('show');
-                document.getElementById('errorMessage').textContent = 'Network error. Please try again.';
-                form.style.display = 'none';
-                startErrorCountdown();
+                showMessage('❌ Network error. Please try again.', 'error');
+                submitBtn.disabled = false;
+                hcaptcha.reset();
             }
         });
 
