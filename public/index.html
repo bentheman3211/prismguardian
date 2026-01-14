@@ -407,6 +407,15 @@
             text-shadow: 0 0 10px rgba(255, 23, 68, 0.8);
         }
 
+        .error-modal {
+            display: none;
+        }
+
+        .error-modal.show {
+            display: flex;
+            animation: fadeIn 0.5s ease-in;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding: 30px 20px;
@@ -484,7 +493,7 @@
     </div>
 
     <!-- Error Modal -->
-    <div class="success-modal" id="errorModal">
+    <div class="success-modal error-modal" id="errorModal">
         <div class="error-content">
             <div class="success-icon">❌</div>
             <h2>VERIFICATION FAILED</h2>
@@ -497,9 +506,12 @@
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 
     <script>
+        // Get userId and guildId from URL (supports both query params and decrypted redirect)
         const urlParams = new URLSearchParams(window.location.search);
         const userId = urlParams.get('userId');
         const guildId = urlParams.get('guildId');
+
+        console.log('🔍 Loaded - userId:', userId, 'guildId:', guildId);
 
         document.getElementById('displayUserId').textContent = userId || 'NOT PROVIDED';
         document.getElementById('displayGuildId').textContent = guildId || 'NOT PROVIDED';
@@ -509,7 +521,7 @@
         const submitBtn = document.getElementById('submitBtn');
 
         if (!userId || !guildId) {
-            showMessage('❌ MISSING PARAMETERS', 'error');
+            showMessage('❌ MISSING PARAMETERS: userId and guildId required', 'error');
             submitBtn.disabled = true;
         }
 
@@ -562,11 +574,18 @@
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const token = hcaptcha.getResponse();
-            if (!token) {
+            
+            if (!window.hcaptcha) {
+                showMessage('❌ hCaptcha not loaded. Please refresh the page.', 'error');
+                return;
+            }
+
+            const captchaToken = window.hcaptcha.getResponse();
+            if (!captchaToken) {
                 showMessage('❌ COMPLETE CAPTCHA', 'error');
                 return;
             }
+
             submitBtn.disabled = true;
             showMessage('<span class="loading-spinner"></span> VERIFYING', 'loading');
 
@@ -574,9 +593,15 @@
                 const response = await fetch('/api/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, guildId, token }),
+                    body: JSON.stringify({ 
+                        userId, 
+                        guildId, 
+                        captchaToken 
+                    }),
                 });
+                
                 const data = await response.json();
+                console.log('Response:', data);
                 
                 if (response.ok && data.success) {
                     // Success
@@ -584,16 +609,17 @@
                     document.getElementById('successModal').classList.add('show');
                     startCountdown();
                 } else {
-                    // Error - show message under button
-                    showMessage('❌ ' + (data.error || 'Verification failed. Please try again.'), 'error');
+                    // Error
+                    const errorMsg = data.error || data.message || 'Verification failed. Please try again.';
+                    showMessage('❌ ' + errorMsg, 'error');
                     submitBtn.disabled = false;
-                    hcaptcha.reset();
+                    if (window.hcaptcha) window.hcaptcha.reset();
                 }
             } catch (error) {
                 console.error('Error:', error);
                 showMessage('❌ Network error. Please try again.', 'error');
                 submitBtn.disabled = false;
-                hcaptcha.reset();
+                if (window.hcaptcha) window.hcaptcha.reset();
             }
         });
 
@@ -612,22 +638,7 @@
                 
                 if (count < 0) {
                     clearInterval(interval);
-                    countdownEl.textContent = 'You can close the site now';
-                }
-            }, 1000);
-        }
-
-        function startErrorCountdown() {
-            let count = 5;
-            const countdownEl = document.getElementById('errorCountdown');
-            
-            const interval = setInterval(() => {
-                countdownEl.textContent = `Closing in ${count}...`;
-                count--;
-                
-                if (count < 0) {
-                    clearInterval(interval);
-                    countdownEl.textContent = 'You can close the site now';
+                    countdownEl.textContent = 'You can close this window now';
                 }
             }, 1000);
         }
