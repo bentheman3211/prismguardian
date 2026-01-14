@@ -16,8 +16,16 @@
       "dest": "api/verification.js"
     },
     {
+      "src": "/verify/(.*)",
+      "dest": "api/verification.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "public/$1"
     }
-  ]
+  ],
+  "env": {
+    "HCAPTCHA_SECRET": "@hcaptcha_secret",
+    "HCAPTCHA_SITEKEY": "@hcaptcha_sitekey"
+  }
 }
