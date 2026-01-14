@@ -14,6 +14,32 @@ app.use(express.static(path.join(__dirname, '../public')));
 const verificationData = new Map();
 const quarantineData = new Map();
 const ipDatabase = new Map();
+const requestCounts = new Map();
+
+// ==================== RATE LIMITING ====================
+
+function checkRateLimit(ip, maxRequests = 10, timeWindowMs = 60000) {
+  const now = Date.now();
+  
+  if (!requestCounts.has(ip)) {
+    requestCounts.set(ip, []);
+  }
+  
+  const requests = requestCounts.get(ip);
+  
+  // Remove old requests outside the time window
+  const validRequests = requests.filter(timestamp => now - timestamp < timeWindowMs);
+  requestCounts.set(ip, validRequests);
+  
+  // Check if limit exceeded
+  if (validRequests.length >= maxRequests) {
+    return false;
+  }
+  
+  // Add current request
+  validRequests.push(now);
+  return true;
+}
 
 // ==================== UTILITY: Get Client IP ====================
 
@@ -330,6 +356,14 @@ app.post('/api/verify', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'hCaptcha verification failed',
+      });
+    }
+
+    // Rate limit: max 10 verification attempts per IP per minute
+    if (!checkRateLimit(clientIp, 10, 60000)) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many verification attempts. Please wait a minute and try again.',
       });
     }
 
