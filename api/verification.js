@@ -1,244 +1,128 @@
-// ==================== MULTI-SOURCE VPN DETECTION (FREE & UNLIMITED) ====================
+// ==================== TRULY FREE VPN DETECTION (IP-API ONLY) ====================
 
 async function checkIPWithMultipleSources(ip) {
-  const results = {
-    isVPN: false,
-    isProxy: false,
-    isHosting: false,
-    abuseScore: 0,
-    isp: 'Unknown',
-    domain: 'Unknown',
-    usageType: 'Unknown',
-    source: 'none',
-    detectionMethods: []
-  };
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-  // Try multiple free sources in parallel with short timeouts
-  const checks = [
-    checkIPQualityScore(ip),
-    checkIPHub(ip),
-    checkIPQualityScoreFree(ip),
-    checkAbuseIPDB(ip)
-  ];
+    // IP-API: 45 req/min, 144,000/day - most generous free tier
+    const response = await fetch(
+      `http://ip-api.com/json/${ip}?fields=status,isp,org,reverse,mobile,proxy,query`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
 
-  const responses = await Promise.allSettled(checks);
-
-  for (const response of responses) {
-    if (response.status === 'fulfilled' && response.value) {
-      const data = response.value;
-      if (data.isVPN || data.isProxy) {
-        results.isVPN = true;
-        results.detectionMethods.push(data.source);
-      }
-      if (data.isHosting) {
-        results.isHosting = true;
-      }
-      if (data.abuseScore > results.abuseScore) {
-        results.abuseScore = data.abuseScore;
-      }
-      if (data.isp && data.isp !== 'Unknown') {
-        results.isp = data.isp;
-      }
-      if (data.usageType && data.usageType !== 'Unknown') {
-        results.usageType = data.usageType;
-      }
-      if (data.source) {
-        results.source = data.source;
-      }
+    if (!response.ok) {
+      return {
+        isVPN: false,
+        isProxy: false,
+        isHosting: false,
+        abuseScore: 0,
+        isp: 'Unknown',
+        domain: 'Unknown',
+        usageType: 'Unknown',
+        source: 'none',
+        detectionMethods: []
+      };
     }
-  }
 
-  // Fallback: Check ISP against known datacenter patterns
-  if (!results.isVPN && results.isp) {
-    if (isDatacenterISP(results.isp)) {
-      results.isVPN = true;
-      results.detectionMethods.push('isp-pattern');
+    const data = await response.json();
+
+    if (data.status !== 'success') {
+      console.warn(`⚠️ IP-API failed for ${ip}: ${data.message}`);
+      return {
+        isVPN: false,
+        isProxy: false,
+        isHosting: false,
+        abuseScore: 0,
+        isp: 'Unknown',
+        domain: 'Unknown',
+        usageType: 'Unknown',
+        source: 'none',
+        detectionMethods: []
+      };
     }
-  }
 
-  console.log(`📊 VPN Detection for ${ip}:`, {
-    isVPN: results.isVPN,
-    detectionMethods: results.detectionMethods,
-    isp: results.isp,
-    usageType: results.usageType
-  });
-
-  return results;
-}
-
-// ==================== METHOD 1: IPQualityScore (Free) ====================
-async function checkIPQualityScore(ip) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`https://ipqualityscore.com/api/json/ip/${ip}?strictness=1`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-
-    return {
-      isVPN: data.vpn === true,
-      isProxy: data.is_crawler === true || data.proxy === true,
-      isHosting: data.is_crawler === true,
-      abuseScore: data.fraud_score || 0,
-      isp: data.isp || 'Unknown',
-      usageType: data.usage_type || 'Unknown',
-      source: 'ipqualityscore'
-    };
-  } catch (error) {
-    console.warn('⚠️ IPQualityScore check failed:', error.message);
-    return null;
-  }
-}
-
-// ==================== METHOD 2: IPHub (Free) ====================
-async function checkIPHub(ip) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`https://v2.api.iphub.info/?ip=${ip}`, {
-      headers: {
-        'X-IPHub-Api-Key': process.env.IPHUB_API_KEY || 'free', // Free tier
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    // block: 0 = residential, 1 = non-residential (VPN/Proxy/etc), 2 = datacenter
-
-    return {
-      isVPN: data.block === 1 || data.block === 2,
-      isProxy: data.block === 1,
-      isHosting: data.block === 2,
-      abuseScore: 0,
-      isp: 'Unknown',
-      usageType: data.block === 0 ? 'residential' : 'non-residential',
-      source: 'iphub'
-    };
-  } catch (error) {
-    console.warn('⚠️ IPHub check failed:', error.message);
-    return null;
-  }
-}
-
-// ==================== METHOD 3: IP-API (Free) ====================
-async function checkIPQualityScoreFree(ip) {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`http://ip-api.com/json/${ip}?fields=isp,org,reverse,mobile,proxy`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-
-    // Detect VPN by checking org/isp against known patterns
+    const detectionMethods = [];
     const orgLower = (data.org || '').toLowerCase();
     const ispLower = (data.isp || '').toLowerCase();
 
-    const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server'];
-    const isVPN = vpnKeywords.some(keyword => 
-      orgLower.includes(keyword) || ispLower.includes(keyword)
-    );
+    // VPN/Proxy indicators
+    let isVPN = data.proxy === true; // IP-API has a built-in proxy field
+    let isHosting = false;
 
-    return {
-      isVPN: isVPN || data.mobile === true,
-      isProxy: isVPN,
-      isHosting: false,
+    // Pattern matching for VPN services
+    const vpnPatterns = [
+      'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'windscribe',
+      'private internet access', 'protonvpn', 'hide.me', 'ipvanish',
+      'hotspot shield', 'tunnelbear', 'mullvad', 'wireguard'
+    ];
+
+    // Pattern matching for hosting/datacenter
+    const hostingPatterns = [
+      'aws', 'amazon', 'azure', 'google cloud', 'digitalocean', 'linode',
+      'vultr', 'hetzner', 'ovh', 'scaleway', 'oracle', 'ibm cloud',
+      'fastly', 'cloudflare', 'akamai', 'softlayer', 'equinix'
+    ];
+
+    if (vpnPatterns.some(p => orgLower.includes(p) || ispLower.includes(p))) {
+      isVPN = true;
+      detectionMethods.push('vpn-pattern');
+    }
+
+    if (hostingPatterns.some(p => orgLower.includes(p) || ispLower.includes(p))) {
+      isHosting = true;
+      detectionMethods.push('hosting-pattern');
+      isVPN = true; // Treat hosting as VPN
+    }
+
+    // Generic datacenter keywords
+    const datacenterKeywords = ['datacenter', 'hosting', 'vps', 'server', 'cloud', 'reseller'];
+    if (datacenterKeywords.some(k => ispLower.includes(k) || orgLower.includes(k))) {
+      isVPN = true;
+      detectionMethods.push('datacenter-keyword');
+    }
+
+    const result = {
+      isVPN,
+      isProxy: data.proxy === true,
+      isHosting,
       abuseScore: 0,
       isp: data.isp || 'Unknown',
-      usageType: 'Unknown',
-      source: 'ip-api'
+      domain: data.reverse || 'Unknown',
+      usageType: isVPN ? 'non-residential' : 'residential',
+      org: data.org || 'Unknown',
+      source: 'ip-api',
+      detectionMethods: detectionMethods.length > 0 ? detectionMethods : ['native-proxy-field']
     };
-  } catch (error) {
-    console.warn('⚠️ IP-API check failed:', error.message);
-    return null;
-  }
-}
 
-// ==================== METHOD 4: AbuseIPDB (Free - Fallback) ====================
-async function checkAbuseIPDB(ip) {
-  try {
-    const apiKey = process.env.ABUSEIPDB_API_KEY;
-    if (!apiKey) return null;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch('https://api.abuseipdb.com/api/v2/check', {
-      method: 'POST',
-      headers: {
-        'Key': apiKey,
-        'Accept': 'application/json',
-      },
-      body: new URLSearchParams({
-        ipAddress: ip,
-        maxAgeInDays: '90',
-      }),
-      signal: controller.signal,
+    console.log(`📊 IP-API Check for ${ip}:`, {
+      isVPN: result.isVPN,
+      methods: result.detectionMethods,
+      isp: result.isp,
+      org: result.org,
+      proxy: data.proxy
     });
 
-    clearTimeout(timeoutId);
+    return result;
 
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const ipData = data.data || {};
-
-    return {
-      isVPN: ipData.isVpn || ipData.isProxy || false,
-      isProxy: ipData.isProxy || false,
-      isHosting: ipData.isHosting || false,
-      abuseScore: ipData.abuseConfidenceScore || 0,
-      isp: ipData.isp || 'Unknown',
-      usageType: ipData.usageType || 'Unknown',
-      source: 'abuseipdb'
-    };
   } catch (error) {
-    console.warn('⚠️ AbuseIPDB check failed:', error.message);
-    return null;
+    console.error('❌ IP-API check error:', error.message);
+    return {
+      isVPN: false,
+      isProxy: false,
+      isHosting: false,
+      abuseScore: 0,
+      isp: 'Unknown',
+      domain: 'Unknown',
+      usageType: 'Unknown',
+      source: 'error',
+      detectionMethods: []
+    };
   }
-}
-
-// ==================== FALLBACK: ISP Pattern Detection ====================
-function isDatacenterISP(isp) {
-  const datacenterPatterns = [
-    // Cloud providers
-    'aws', 'amazon', 'azure', 'google cloud', 'digitalocean', 'linode', 'vultr',
-    'hetzner', 'ovh', 'scaleway', 'oracle cloud', 'ibm cloud', 'akamai',
-    
-    // VPN/Hosting providers
-    'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'windscribe', 'private internet access',
-    'protonvpn', 'hide.me', 'ipvanish', 'hotspot shield', 'tunnelbear',
-    
-    // Hosting companies
-    'linode', 'softlayer', 'zenlayer', 'equinix', 'arin', 'fastly', 'cloudflare',
-    'servermania', 'ipxo', 'cogent', 'telia', 'as209',
-    
-    // Generic datacenters
-    'hosting', 'datacenter', 'server', 'cloud', 'vps', 'dedicated',
-    'colocation', 'colo', 'isp - vps', 'reseller'
-  ];
-
-  const lowerIsp = isp.toLowerCase();
-  return datacenterPatterns.some(pattern => lowerIsp.includes(pattern));
 }
 
 // ==================== USAGE IN YOUR VERIFICATION ====================
-// Replace your existing checkIPWithAbuseIPDB call with this:
 
 app.post('/api/verify', async (req, res) => {
   try {
@@ -265,7 +149,7 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // ✅ USE THE NEW MULTI-SOURCE VPN DETECTION
+    // ✅ Single source VPN detection (truly unlimited free)
     const ipQuality = await checkIPWithMultipleSources(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
 
@@ -276,7 +160,7 @@ app.post('/api/verify', async (req, res) => {
     // Determine if VPN/Proxy
     const isVPN = ipQuality.isVPN || ipQuality.isHosting;
 
-    // REST OF YOUR CODE REMAINS THE SAME...
+    // HIGH RISK: VPN + multiple accounts from same IP
     if (isVPN && ipRiskScore >= 60) {
       console.log(`🚫 RAID DETECTED: VPN + multiple accounts from ${clientIp}`);
       return res.status(403).json({
@@ -286,6 +170,7 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
+    // BLOCK VPNs during raids
     if (isVPN) {
       const guildComposition = checkGuildIPComposition(guildId);
       if (guildComposition.suspicious) {
@@ -299,6 +184,7 @@ app.post('/api/verify', async (req, res) => {
       console.log(`⚠️ VPN detected for user ${userId} but guild is calm - allowing`);
     }
 
+    // Mark user as verified
     verificationData.set(userId, {
       verified: true,
       timestamp: Date.now(),
@@ -313,12 +199,14 @@ app.post('/api/verify', async (req, res) => {
       notified: false,
     });
 
+    // Update IP database
     if (!ipData.accounts[guildId]) {
       ipData.accounts[guildId] = [];
     }
     ipData.accounts[guildId].push(userId);
     ipData.isVPN = isVPN;
 
+    // Remove from quarantine if present
     if (quarantineData.has(userId)) {
       quarantineData.delete(userId);
       console.log(`✅ Removed ${userId} from quarantine`);
@@ -341,6 +229,34 @@ app.post('/api/verify', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Internal server error',
+    });
+  }
+});
+
+app.get('/api/test-ip', async (req, res) => {
+  try {
+    const ip = getClientIp(req);
+    console.log(`🔍 Testing IP: ${ip}`);
+    
+    const ipQuality = await checkIPWithMultipleSources(ip);
+    
+    res.json({
+      ip,
+      isVPN: ipQuality.isVPN,
+      isHosting: ipQuality.isHosting,
+      abuseScore: ipQuality.abuseScore,
+      isp: ipQuality.isp,
+      org: ipQuality.org,
+      domain: ipQuality.domain,
+      usageType: ipQuality.usageType,
+      detectionMethods: ipQuality.detectionMethods,
+      message: ipQuality.isVPN ? '🚫 VPN/Proxy detected' : '✅ Residential IP (allowed)',
+    });
+  } catch (error) {
+    console.error('Error testing IP:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
     });
   }
 });
