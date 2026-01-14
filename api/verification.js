@@ -1,7 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
+
+const { encryptUrlParams, decryptUrlParams } = require('./utils/urlEncryption');
 
 const app = express();
 
@@ -683,6 +686,343 @@ app.get('/api/test-ip', async (req, res) => {
     });
   }
 });
+
+// ==================== ENCRYPTED VERIFICATION ENDPOINTS ====================
+
+/**
+ * POST /api/generate-verify-token
+ * Generate encrypted token for verification link (bot use only)
+ */
+app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
+  try {
+    const { userId, guildId } = req.body;
+
+    if (!userId || !guildId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing userId or guildId',
+      });
+    }
+
+    // Generate encrypted token
+    const encryptedToken = encryptUrlParams(userId, guildId);
+
+    if (!encryptedToken) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to generate token',
+      });
+    }
+
+    const host = req.get('host');
+    const verificationUrl = `${req.protocol}://${host}/verify/${encryptedToken}`;
+
+    console.log(`✅ Generated encrypted token for user ${userId} in guild ${guildId}`);
+
+    return res.json({
+      success: true,
+      token: encryptedToken,
+      verificationUrl,
+    });
+  } catch (error) {
+    console.error('Token generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+    });
+  }
+});
+
+/**
+ * GET /verify/:encryptedToken
+ * Decrypt token and show verification page
+ */
+app.get('/verify/:encryptedToken', (req, res) => {
+  try {
+    const encryptedToken = req.params.encryptedToken;
+    const decoded = decryptUrlParams(encryptedToken);
+
+    if (!decoded || !decoded.userId || !decoded.guildId) {
+      return res.status(400).send(renderError('Invalid or expired verification link'));
+    }
+
+    console.log(`🔓 Decrypted token for user ${decoded.userId} in guild ${decoded.guildId}`);
+
+    return res.send(renderVerificationPage(
+      encryptedToken,
+      decoded.userId,
+      decoded.guildId
+    ));
+  } catch (error) {
+    console.error('Decrypt error:', error);
+    return res.status(400).send(renderError('Invalid verification link'));
+  }
+});
+
+// ==================== HTML RENDERING ====================
+
+function renderVerificationPage(token, userId, guildId) {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Server Verification</title>
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        
+        .container {
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          padding: 40px;
+          max-width: 500px;
+          width: 100%;
+        }
+        
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+        
+        .header h1 {
+          color: #2c3e50;
+          font-size: 28px;
+          margin-bottom: 10px;
+        }
+        
+        .header p {
+          color: #7f8c8d;
+          font-size: 14px;
+        }
+        
+        .shield-icon {
+          font-size: 48px;
+          margin-bottom: 15px;
+        }
+        
+        .info-box {
+          background: #f0f7ff;
+          border-left: 4px solid #667eea;
+          padding: 15px;
+          border-radius: 6px;
+          margin-bottom: 20px;
+          font-size: 14px;
+          color: #2c3e50;
+        }
+        
+        .captcha-container {
+          margin: 20px 0;
+          display: flex;
+          justify-content: center;
+        }
+        
+        button {
+          width: 100%;
+          padding: 12px 20px;
+          border: none;
+          border-radius: 6px;
+          font-size: 16px;
+          font-weight: 600;
+          cursor: pointer;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          transition: all 0.3s ease;
+        }
+        
+        button:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        
+        .status {
+          text-align: center;
+          margin-top: 20px;
+          font-size: 14px;
+          color: #7f8c8d;
+        }
+        
+        .status.success {
+          color: #27ae60;
+        }
+        
+        .status.error {
+          color: #e74c3c;
+        }
+        
+        .spinner {
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          border: 2px solid #f3f3f3;
+          border-top: 2px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <div class="shield-icon">🛡️</div>
+          <h1>Server Verification</h1>
+          <p>Complete verification to regain access</p>
+        </div>
+        
+        <div class="info-box">
+          ⚠️ Your account was detected as suspicious. Complete this verification to continue.
+        </div>
+        
+        <div class="captcha-container">
+          <div class="h-captcha" data-sitekey="${process.env.HCAPTCHA_SITEKEY}" data-callback="onCaptchaSuccess" data-error-callback="onCaptchaError" data-expired-callback="onCaptchaExpire"></div>
+        </div>
+        
+        <button id="verify-btn" onclick="submitVerification()">✓ Verify</button>
+        <div class="status" id="status"></div>
+      </div>
+      
+      <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+      <script>
+        const token = '${token}';
+        const userId = '${userId}';
+        const guildId = '${guildId}';
+        
+        let captchaToken = null;
+        
+        function onCaptchaSuccess(captchaResponse) {
+          captchaToken = captchaResponse;
+          console.log('✅ Captcha completed');
+        }
+        
+        function onCaptchaError() {
+          showStatus('Captcha error. Please try again.', 'error');
+          captchaToken = null;
+        }
+        
+        function onCaptchaExpire() {
+          showStatus('Captcha expired. Please complete it again.', 'error');
+          captchaToken = null;
+        }
+        
+        async function submitVerification() {
+          if (!captchaToken) {
+            showStatus('❌ Please complete the captcha first', 'error');
+            return;
+          }
+          
+          const btn = document.getElementById('verify-btn');
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner"></span>';
+          
+          try {
+            const response = await fetch('/api/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                token,
+                captchaToken,
+                userId,
+                guildId
+              })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              showStatus('✅ Verification successful! Redirecting...', 'success');
+              setTimeout(() => {
+                window.location.href = 'https://discord.com';
+              }, 2000);
+            } else {
+              showStatus(\`❌ \${data.error || data.message}\`, 'error');
+              btn.disabled = false;
+              btn.innerHTML = '✓ Verify';
+            }
+          } catch (error) {
+            showStatus('❌ Network error. Please try again.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '✓ Verify';
+            console.error(error);
+          }
+        }
+        
+        function showStatus(message, type) {
+          const status = document.getElementById('status');
+          status.textContent = message;
+          status.className = 'status ' + type;
+        }
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+function renderError(message) {
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Verification Error</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .container {
+          background: white;
+          border-radius: 12px;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+          padding: 40px;
+          max-width: 500px;
+          width: 100%;
+          text-align: center;
+        }
+        h1 { color: #e74c3c; margin-bottom: 15px; }
+        p { color: #7f8c8d; font-size: 16px; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>❌ Verification Error</h1>
+        <p>${message}</p>
+      </div>
+    </body>
+    </html>
+  `;
+}
 
 // ==================== SERVE VERIFICATION PAGE ====================
 
