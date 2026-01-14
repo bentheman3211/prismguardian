@@ -973,9 +973,7 @@ function renderError(message) {
 
 // ==================== SERVE VERIFICATION PAGE ====================
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
+
 
 // ==================== ERROR HANDLING ====================
 
