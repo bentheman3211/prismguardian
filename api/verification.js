@@ -1,4 +1,72 @@
-// ==================== TRULY FREE VPN DETECTION (IP-API ONLY) ====================
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+app.use(express.static(path.join(__dirname, '../public')));
+
+// In-memory storage
+const verificationData = new Map();
+const quarantineData = new Map();
+const ipDatabase = new Map();
+
+// ==================== UTILITY: Get Client IP ====================
+
+function getClientIp(req) {
+  return (
+    req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+    req.headers['cf-connecting-ip'] ||
+    req.headers['x-real-ip'] ||
+    req.connection.remoteAddress ||
+    req.socket.remoteAddress ||
+    req.ip ||
+    '0.0.0.0'
+  ).replace(/^::ffff:/, '');
+}
+
+// ==================== HCAPTCHA VERIFICATION ====================
+
+async function verifyHcaptcha(token, remoteIp) {
+  try {
+    const response = await fetch('https://hcaptcha.com/siteverify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        secret: process.env.HCAPTCHA_SECRET,
+        response: token,
+        remoteip: remoteIp || '0.0.0.0',
+      }),
+    });
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('❌ hCaptcha verification error:', error);
+    return false;
+  }
+}
+
+// ==================== AUTHORIZATION MIDDLEWARE ====================
+
+function validateBotSecret(req, res, next) {
+  const secret = req.headers['x-bot-secret'];
+  if (secret !== process.env.BOT_API_SECRET) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized - Invalid bot secret',
+    });
+  }
+  next();
+}
+
+// ==================== VPN DETECTION (IP-API - UNLIMITED FREE) ====================
 
 async function checkIPWithMultipleSources(ip) {
   try {
@@ -47,18 +115,17 @@ async function checkIPWithMultipleSources(ip) {
     const orgLower = (data.org || '').toLowerCase();
     const ispLower = (data.isp || '').toLowerCase();
 
-    // VPN/Proxy indicators
-    let isVPN = data.proxy === true; // IP-API has a built-in proxy field
+    let isVPN = data.proxy === true;
     let isHosting = false;
 
-    // Pattern matching for VPN services
+    // VPN services pattern matching
     const vpnPatterns = [
       'expressvpn', 'nordvpn', 'surfshark', 'cyberghost', 'windscribe',
       'private internet access', 'protonvpn', 'hide.me', 'ipvanish',
       'hotspot shield', 'tunnelbear', 'mullvad', 'wireguard'
     ];
 
-    // Pattern matching for hosting/datacenter
+    // Hosting/datacenter pattern matching
     const hostingPatterns = [
       'aws', 'amazon', 'azure', 'google cloud', 'digitalocean', 'linode',
       'vultr', 'hetzner', 'ovh', 'scaleway', 'oracle', 'ibm cloud',
@@ -73,7 +140,7 @@ async function checkIPWithMultipleSources(ip) {
     if (hostingPatterns.some(p => orgLower.includes(p) || ispLower.includes(p))) {
       isHosting = true;
       detectionMethods.push('hosting-pattern');
-      isVPN = true; // Treat hosting as VPN
+      isVPN = true;
     }
 
     // Generic datacenter keywords
@@ -122,8 +189,125 @@ async function checkIPWithMultipleSources(ip) {
   }
 }
 
-// ==================== USAGE IN YOUR VERIFICATION ====================
+// ==================== IP TRACKING & RISK ANALYSIS ====================
 
+function trackIP(ip, userId, guildId) {
+  if (!ipDatabase.has(ip)) {
+    ipDatabase.set(ip, {
+      users: [],
+      firstSeen: Date.now(),
+      accounts: {},
+      isVPN: false,
+    });
+  }
+
+  const ipData = ipDatabase.get(ip);
+  if (!ipData.users.includes(userId)) {
+    ipData.users.push(userId);
+  }
+
+  return ipData;
+}
+
+function getIPRiskScore(ip, guildId) {
+  const ipData = ipDatabase.get(ip);
+  if (!ipData) return 0;
+
+  // Count recent verifications from same IP in this guild
+  const recentVerifications = [];
+  for (const userId of ipData.users) {
+    const userData = verificationData.get(userId);
+    if (userData && userData.guildId === guildId) {
+      const timeDiff = Date.now() - userData.timestamp;
+      // Within last 10 minutes = suspicious
+      if (timeDiff < 10 * 60 * 1000) {
+        recentVerifications.push(userData);
+      }
+    }
+  }
+
+  // Multiple accounts from same IP in short time = raid indicator
+  if (recentVerifications.length >= 5) return 95;
+  if (recentVerifications.length >= 4) return 85;
+  if (recentVerifications.length >= 3) return 75;
+  if (recentVerifications.length >= 2) return 60;
+
+  return 0;
+}
+
+function checkGuildIPComposition(guildId) {
+  const guildUsers = [];
+  const vpnIPs = new Set();
+  const residentialIPs = new Set();
+
+  for (const [userId, userData] of verificationData.entries()) {
+    if (userData.guildId === guildId) {
+      guildUsers.push(userData);
+      if (userData.isVPN) {
+        vpnIPs.add(userData.ip);
+      } else {
+        residentialIPs.add(userData.ip);
+      }
+    }
+  }
+
+  if (guildUsers.length < 3) {
+    return { suspicious: false, vpnPercent: 0 };
+  }
+
+  const vpnPercent = (vpnIPs.size / guildUsers.length) * 100;
+  const isSuspicious = vpnPercent > 60 || vpnIPs.size >= 5;
+
+  return {
+    suspicious: isSuspicious,
+    vpnPercent: Math.round(vpnPercent),
+    totalUsers: guildUsers.length,
+    vpnCount: vpnIPs.size,
+    residentialCount: residentialIPs.size,
+  };
+}
+
+// ==================== VERIFICATION ENDPOINTS ====================
+
+/**
+ * GET /api/verification-status/:userId
+ * Check if a user has completed verification
+ */
+app.get('/api/verification-status/:userId', (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const userData = verificationData.get(userId);
+
+    if (!userData) {
+      return res.json({
+        userId,
+        verified: false,
+        reason: 'No verification record found',
+      });
+    }
+
+    const isExpired = Date.now() - userData.timestamp > 24 * 60 * 60 * 1000;
+
+    return res.json({
+      userId,
+      verified: !isExpired && userData.verified,
+      verificationTime: userData.timestamp,
+      guildId: userData.guildId,
+      isExpired,
+      expiresIn: Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - userData.timestamp)),
+      wasVPN: userData.isVPN || false,
+    });
+  } catch (error) {
+    console.error('❌ Error checking verification status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/verify
+ * Verify a user with hCaptcha token
+ * Body: { userId, guildId, token }
+ */
 app.post('/api/verify', async (req, res) => {
   try {
     const { userId, guildId, token } = req.body;
@@ -149,7 +333,7 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // ✅ Single source VPN detection (truly unlimited free)
+    // Check IP with new unlimited free VPN detection
     const ipQuality = await checkIPWithMultipleSources(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
 
@@ -170,9 +354,10 @@ app.post('/api/verify', async (req, res) => {
       });
     }
 
-    // BLOCK VPNs during raids
+    // BLOCK pure VPNs during raids (but allow if guild is calm)
     if (isVPN) {
       const guildComposition = checkGuildIPComposition(guildId);
+      // Only block VPN if guild already has 60%+ VPN or 5+ VPN accounts
       if (guildComposition.suspicious) {
         console.log(`🚫 VPN blocked due to guild raid pattern: ${guildComposition.vpnPercent}% VPN`);
         return res.status(403).json({
@@ -181,6 +366,8 @@ app.post('/api/verify', async (req, res) => {
           riskLevel: 'high',
         });
       }
+
+      // Allow VPN but mark it
       console.log(`⚠️ VPN detected for user ${userId} but guild is calm - allowing`);
     }
 
@@ -233,6 +420,223 @@ app.post('/api/verify', async (req, res) => {
   }
 });
 
+// ==================== QUARANTINE ENDPOINTS ====================
+
+/**
+ * GET /api/quarantine/:userId
+ * Check if a user is in quarantine
+ */
+app.get('/api/quarantine/:userId', (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const quarantineInfo = quarantineData.get(userId);
+    const verificationInfo = verificationData.get(userId);
+
+    if (!quarantineInfo) {
+      return res.json({
+        userId,
+        quarantined: false,
+        verified: verificationInfo?.verified || false,
+      });
+    }
+
+    return res.json({
+      userId,
+      quarantined: quarantineInfo.quarantined,
+      reason: quarantineInfo.reason,
+      violations: quarantineInfo.violations || 0,
+      quarantinedAt: quarantineInfo.timestamp,
+      guildId: quarantineInfo.guildId,
+      verified: verificationInfo?.verified || false,
+    });
+  } catch (error) {
+    console.error('❌ Error checking quarantine status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/quarantine
+ * Add a user to quarantine (called by bot)
+ * Body: { userId, guildId, reason }
+ */
+app.post('/api/quarantine', validateBotSecret, (req, res) => {
+  try {
+    const { userId, guildId, reason } = req.body;
+
+    if (!userId || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: userId, reason',
+      });
+    }
+
+    quarantineData.set(userId, {
+      quarantined: true,
+      reason,
+      violations: 0,
+      timestamp: Date.now(),
+      guildId,
+    });
+
+    console.log(`🔒 User ${userId} quarantined: ${reason}`);
+
+    return res.json({
+      success: true,
+      message: 'User quarantined',
+      userId,
+      guildId,
+    });
+  } catch (error) {
+    console.error('❌ Error quarantining user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /api/quarantine/:userId/violation
+ * Record a violation for a quarantined user
+ */
+app.post('/api/quarantine/:userId/violation', validateBotSecret, (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const quarantineInfo = quarantineData.get(userId);
+
+    if (!quarantineInfo) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not in quarantine',
+      });
+    }
+
+    quarantineInfo.violations++;
+    console.log(`⚠️ Violation recorded for ${userId}. Count: ${quarantineInfo.violations}`);
+
+    return res.json({
+      success: true,
+      userId,
+      violations: quarantineInfo.violations,
+      shouldBan: quarantineInfo.violations >= 2,
+    });
+  } catch (error) {
+    console.error('❌ Error recording violation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /api/quarantine/:userId/release
+ * Release a user from quarantine
+ */
+app.post('/api/quarantine/:userId/release', validateBotSecret, (req, res) => {
+  try {
+    const userId = req.params.userId;
+    quarantineData.delete(userId);
+    console.log(`✅ User ${userId} released from quarantine`);
+
+    return res.json({
+      success: true,
+      message: 'User released from quarantine',
+      userId,
+    });
+  } catch (error) {
+    console.error('❌ Error releasing user:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    });
+  }
+});
+
+// ==================== RAID STATUS ENDPOINTS ====================
+
+/**
+ * GET /api/raid-status/:guildId
+ * Get comprehensive raid status for a guild
+ */
+app.get('/api/raid-status/:guildId', validateBotSecret, (req, res) => {
+  try {
+    const guildId = req.params.guildId;
+    const quarantinedUsers = [];
+    const guildComposition = checkGuildIPComposition(guildId);
+
+    for (const [userId, info] of quarantineData.entries()) {
+      if (info.guildId === guildId) {
+        quarantinedUsers.push({
+          userId,
+          reason: info.reason,
+          violations: info.violations,
+          quarantinedAt: info.timestamp,
+        });
+      }
+    }
+
+    return res.json({
+      guildId,
+      quarantinedCount: quarantinedUsers.length,
+      quarantinedUsers,
+      composition: guildComposition,
+      raidDetected: guildComposition.suspicious,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    console.error('❌ Error getting raid status:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/get-verified-users/:guildId
+ * Get list of users who just verified (for polling)
+ */
+app.get('/api/get-verified-users/:guildId', validateBotSecret, (req, res) => {
+  try {
+    const guildId = req.params.guildId;
+    const verifiedUsers = [];
+
+    for (const [userId, userData] of verificationData.entries()) {
+      if (userData.guildId === guildId && userData.verified && !userData.notified) {
+        verifiedUsers.push({
+          userId,
+          verifiedAt: userData.timestamp,
+          riskLevel: userData.ipRiskScore >= 60 ? 'medium' : 'low',
+          usingVPN: userData.isVPN,
+        });
+        userData.notified = true;
+      }
+    }
+
+    return res.json({
+      guildId,
+      verifiedUsers,
+      count: verifiedUsers.length,
+    });
+  } catch (error) {
+    console.error('❌ Error getting verified users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== HEALTH CHECK ====================
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: Date.now(),
+    uptime: process.uptime(),
+  });
+});
+
+/**
+ * GET /api/test-ip
+ * Test the user's current IP
+ */
 app.get('/api/test-ip', async (req, res) => {
   try {
     const ip = getClientIp(req);
@@ -260,3 +664,40 @@ app.get('/api/test-ip', async (req, res) => {
     });
   }
 });
+
+// ==================== SERVE VERIFICATION PAGE ====================
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// ==================== ERROR HANDLING ====================
+
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Endpoint not found',
+  });
+});
+
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled error:', err);
+  res.status(500).json({
+    error: 'Internal server error',
+  });
+});
+
+// ==================== START SERVER ====================
+
+const PORT = process.env.PORT || 3001;
+const server = app.listen(PORT, () => {
+  console.log(`\n╔═══════════════════════════════════════╗`);
+  console.log(`║  🔐 Verification API Running 🛡️    ║`);
+  console.log(`╚═══════════════════════════════════════╝\n`);
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`🔗 Local: http://localhost:${PORT}`);
+  console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
+  
+  console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
+});
+
+module.exports = app;
