@@ -378,31 +378,14 @@ app.post('/api/verify', async (req, res) => {
     // Determine if VPN/Proxy
     const isVPN = ipQuality.isVPN || ipQuality.isHosting;
 
-    // HIGH RISK: VPN + multiple accounts from same IP
-    if (isVPN && ipRiskScore >= 60) {
-      console.log(`🚫 RAID DETECTED: VPN + multiple accounts from ${clientIp}`);
+    // BLOCK ALL VPNs
+    if (isVPN) {
+      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy`);
       return res.status(403).json({
         success: false,
-        error: 'Cannot verify: Suspicious activity detected (VPN + multiple accounts)',
-        riskScore: ipRiskScore,
+        error: 'VPN/Proxy usage is not allowed. Please disconnect and try again.',
+        riskLevel: 'high',
       });
-    }
-
-    // BLOCK pure VPNs during raids (but allow if guild is calm)
-    if (isVPN) {
-      const guildComposition = checkGuildIPComposition(guildId);
-      // Only block VPN if guild already has 60%+ VPN or 5+ VPN accounts
-      if (guildComposition.suspicious) {
-        console.log(`🚫 VPN blocked due to guild raid pattern: ${guildComposition.vpnPercent}% VPN`);
-        return res.status(403).json({
-          success: false,
-          error: 'VPN/Proxy usage is not allowed during raid conditions',
-          riskLevel: 'high',
-        });
-      }
-
-      // Allow VPN but mark it
-      console.log(`⚠️ VPN detected for user ${userId} but guild is calm - allowing`);
     }
 
     // Mark user as verified
