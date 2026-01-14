@@ -506,10 +506,21 @@
     <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
 
     <script>
-        // Get userId and guildId from URL (supports both query params and decrypted redirect)
-        const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('userId');
-        const guildId = urlParams.get('guildId');
+        // Get userId and guildId from injected data or URL params (backward compatibility)
+        let userId, guildId;
+        
+        if (window.verificationData && window.verificationData.userId) {
+          // Data was injected by server (encrypted token route)
+          userId = window.verificationData.userId;
+          guildId = window.verificationData.guildId;
+          console.log('✅ Using server-injected verification data');
+        } else {
+          // Fall back to URL params (backward compatibility)
+          const urlParams = new URLSearchParams(window.location.search);
+          userId = urlParams.get('userId');
+          guildId = urlParams.get('guildId');
+          console.log('✅ Using URL query parameters');
+        }
 
         console.log('🔍 Loaded - userId:', userId, 'guildId:', guildId);
 
