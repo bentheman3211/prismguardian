@@ -370,23 +370,25 @@ app.post('/api/verify', async (req, res) => {
     // Check IP with new unlimited free VPN detection
     const ipQuality = await checkIPWithMultipleSources(clientIp);
     console.log(`📊 IP Quality for ${clientIp}:`, ipQuality);
-
-    // Track this IP
-    const ipData = trackIP(clientIp, userId, guildId);
-    const ipRiskScore = getIPRiskScore(clientIp, guildId);
+    console.log(`🔍 DEBUG - isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting}`);
 
     // Determine if VPN/Proxy
     const isVPN = ipQuality.isVPN || ipQuality.isHosting;
+    console.log(`🔍 DEBUG - Final isVPN check: ${isVPN}`);
 
     // BLOCK ALL VPNs
     if (isVPN) {
-      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy`);
+      console.log(`🚫 VPN BLOCKED: ${clientIp} detected as VPN/Proxy (isVPN: ${ipQuality.isVPN}, isHosting: ${ipQuality.isHosting})`);
       return res.status(403).json({
         success: false,
         error: 'VPN/Proxy usage is not allowed. Please disconnect and try again.',
         riskLevel: 'high',
       });
     }
+
+    // Track this IP
+    const ipData = trackIP(clientIp, userId, guildId);
+    const ipRiskScore = getIPRiskScore(clientIp, guildId);
 
     // Mark user as verified
     verificationData.set(userId, {
