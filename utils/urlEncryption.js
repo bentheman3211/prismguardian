@@ -3,7 +3,7 @@
 
 const crypto = require('crypto');
 
-const SECRET_KEY = process.env.ENCRYPTION_KEY || 'default-secret-key-change-this';
+const SECRET_KEY = process.env.ENCRYPTION_KEY || '349e3756622fd5efb1aa43f50f7f26e74d6ad89da2baec0712fd872dc4fd7883';
 
 // Encrypt parameters
 function encryptUrlParams(userId, guildId) {
