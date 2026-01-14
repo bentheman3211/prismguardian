@@ -339,6 +339,16 @@
             animation: slideIn 0.5s ease-out;
         }
 
+        .error-content {
+            background: linear-gradient(135deg, rgba(255, 23, 68, 0.1) 0%, rgba(200, 0, 0, 0.1) 100%);
+            border: 3px solid #ff1744;
+            padding: 50px 40px;
+            text-align: center;
+            max-width: 450px;
+            box-shadow: 0 0 60px rgba(255, 23, 68, 0.5);
+            animation: slideIn 0.5s ease-out;
+        }
+
         @keyframes slideIn {
             from {
                 transform: scale(0.8);
@@ -368,7 +378,15 @@
             text-shadow: 0 0 20px rgba(76, 175, 80, 0.6);
         }
 
-        .success-content p {
+        .error-content h2 {
+            color: #ff1744;
+            font-size: 28px;
+            margin-bottom: 12px;
+            text-shadow: 0 0 20px rgba(255, 23, 68, 0.6);
+        }
+
+        .success-content p,
+        .error-content p {
             color: #e0e0e0;
             font-size: 13px;
             line-height: 1.6;
@@ -380,6 +398,13 @@
             font-size: 24px;
             font-weight: bold;
             text-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        }
+
+        .error-countdown {
+            color: #ff1744;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 23, 68, 0.8);
         }
 
         @media (max-width: 600px) {
@@ -455,6 +480,16 @@
             <h2>VERIFIED</h2>
             <p>Identity confirmed. You may now return to the server.</p>
             <div class="countdown" id="countdown">Closing in 5...</div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="success-modal" id="errorModal">
+        <div class="error-content">
+            <div class="success-icon">❌</div>
+            <h2>VERIFICATION FAILED</h2>
+            <p id="errorMessage">Verification failed. Please try again or contact support.</p>
+            <div class="error-countdown" id="errorCountdown">Closing in 5...</div>
         </div>
     </div>
 
@@ -542,35 +577,25 @@
                     body: JSON.stringify({ userId, guildId, token }),
                 });
                 const data = await response.json();
-                if (data.success) {
-                    // Notify bot webhook
-                    try {
-                        const webhookUrl = process.env.WEBHOOK_URL || 'http://localhost:3002/webhook/verification-success';
-                        await fetch(webhookUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                userId,
-                                guildId,
-                                verified: true
-                            }),
-                        });
-                    } catch (error) {
-                        console.log('Webhook notification sent');
-                    }
-                    
+                
+                if (response.ok && data.success) {
+                    // Success
                     document.getElementById('successModal').classList.add('show');
                     form.style.display = 'none';
                     startCountdown();
                 } else {
-                    document.getElementById('successModal').classList.add('show');
+                    // Error
+                    document.getElementById('errorModal').classList.add('show');
+                    document.getElementById('errorMessage').textContent = data.error || 'Verification failed. Please try again.';
                     form.style.display = 'none';
-                    startCountdown();
+                    startErrorCountdown();
                 }
             } catch (error) {
-                document.getElementById('successModal').classList.add('show');
+                console.error('Error:', error);
+                document.getElementById('errorModal').classList.add('show');
+                document.getElementById('errorMessage').textContent = 'Network error. Please try again.';
                 form.style.display = 'none';
-                startCountdown();
+                startErrorCountdown();
             }
         });
 
@@ -582,6 +607,21 @@
         function startCountdown() {
             let count = 5;
             const countdownEl = document.getElementById('countdown');
+            
+            const interval = setInterval(() => {
+                countdownEl.textContent = `Closing in ${count}...`;
+                count--;
+                
+                if (count < 0) {
+                    clearInterval(interval);
+                    countdownEl.textContent = 'You can close the site now';
+                }
+            }, 1000);
+        }
+
+        function startErrorCountdown() {
+            let count = 5;
+            const countdownEl = document.getElementById('errorCountdown');
             
             const interval = setInterval(() => {
                 countdownEl.textContent = `Closing in ${count}...`;
