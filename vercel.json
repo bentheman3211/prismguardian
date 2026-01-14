@@ -12,16 +12,20 @@
   ],
   "routes": [
     {
+      "src": "/verify/(.+)",
+      "dest": "api/verification.js?token=$1"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "api/verification.js"
     },
     {
-      "src": "/verify/(.*)",
-      "dest": "api/verification.js"
+      "src": "/(?!api|verify)(.*\\..*)",
+      "dest": "public/$1"
     },
     {
-      "src": "/(.*)",
-      "dest": "public/$1"
+      "src": "/(?!api|verify).*",
+      "dest": "public/index.html"
     }
   ],
   "env": {
