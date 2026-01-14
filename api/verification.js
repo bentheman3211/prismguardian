@@ -123,7 +123,8 @@ async function verifyHcaptcha(token, remoteIp) {
 
 function validateBotSecret(req, res, next) {
   const secret = req.headers['x-bot-secret'];
-  if (secret !== process.env.BOT_API_SECRET) {
+  const validSecret = '6ce72d368650c12094130b04f9b524817db5982f12e0436bcc1d2ce8e4f1ce18';
+  if (secret !== validSecret) {
     return res.status(401).json({
       success: false,
       error: 'Unauthorized - Invalid bot secret',
@@ -692,7 +693,7 @@ app.post('/api/generate-verify-token', validateBotSecret, (req, res) => {
     }
 
     const host = req.get('host');
-    const verificationUrl = `${req.protocol}://${host}/verify/${encryptedToken}`;
+    const verificationUrl = `https://prismguardian.vercel.app/verify/${encryptedToken}`;
 
     console.log(`✅ Generated encrypted token for user ${userId} in guild ${guildId}`);
     console.log(`🔗 URL: ${verificationUrl}`);
@@ -985,16 +986,20 @@ app.use((err, req, res, next) => {
 
 // ==================== START SERVER ====================
 
-const PORT = process.env.PORT || 3001;
-const server = app.listen(PORT, () => {
-  console.log(`\n╔═══════════════════════════════════════╗`);
-  console.log(`║  🔐 Verification API Running 🛡️    ║`);
-  console.log(`╚═══════════════════════════════════════╝\n`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🔗 Local: http://localhost:${PORT}`);
-  console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
-  
-  console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
-});
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3001;
+  const server = app.listen(PORT, () => {
+    console.log(`\n╔═══════════════════════════════════════╗`);
+    console.log(`║  🔐 Verification API Running 🛡️    ║`);
+    console.log(`╚═══════════════════════════════════════╝\n`);
+    console.log(`📍 Port: ${PORT}`);
+    console.log(`🔗 Local: http://localhost:${PORT}`);
+    console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
+    
+    console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
+  });
+}
 
+// Export for Vercel serverless
 module.exports = app;
