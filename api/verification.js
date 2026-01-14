@@ -1045,18 +1045,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==================== START SERVER ====================
-
-const PORT = process.env.PORT || 3001;
-const server = app.listen(PORT, () => {
-  console.log(`\n╔═══════════════════════════════════════╗`);
-  console.log(`║  🔐 Verification API Running 🛡️    ║`);
-  console.log(`╚═══════════════════════════════════════╝\n`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🔗 Local: http://localhost:${PORT}`);
-  console.log(`💚 Health: http://localhost:${PORT}/api/health\n`);
-  
-  console.log('✅ Using IP-API for VPN detection (unlimited free - 144,000 requests/day)');
-});
+// ==================== EXPORT FOR VERCEL ====================
 
 module.exports = app;
