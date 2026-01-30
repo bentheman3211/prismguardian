@@ -16,11 +16,15 @@
       "dest": "api/verification.js"
     },
     {
-      "src": "/?$",
+      "src": "/landing(?:\\.html)?$",
       "dest": "public/landing.html"
     },
     {
-      "src": "/verify",
+      "src": "^/$",
+      "dest": "public/landing.html"
+    },
+    {
+      "src": "/index(?:\\.html)?$",
       "dest": "public/index.html"
     },
     {
