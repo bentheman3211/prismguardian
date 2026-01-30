@@ -8,6 +8,22 @@
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "api/verification.js"
+    },
+    {
+      "src": "/verify/(.*)",
+      "dest": "api/verification.js"
+    },
+    {
+      "src": "/?$",
+      "dest": "public/landing.html"
+    },
+    {
+      "src": "/verify",
+      "dest": "public/index.html"
+    },
+    {
       "src": "/(.*)",
       "dest": "api/verification.js"
     }
