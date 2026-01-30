@@ -1,6 +1,11 @@
 {
   "version": 2,
+  "buildCommand": "echo 'No build needed'",
   "builds": [
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    },
     {
       "src": "api/verification.js",
       "use": "@vercel/node"
@@ -16,7 +21,7 @@
       "dest": "api/verification.js"
     },
     {
-      "src": "/landing(?:\\.html)?$",
+      "src": "/landing",
       "dest": "public/landing.html"
     },
     {
@@ -24,8 +29,8 @@
       "dest": "public/landing.html"
     },
     {
-      "src": "/index(?:\\.html)?$",
-      "dest": "public/index.html"
+      "src": "/(.*)\\.html$",
+      "dest": "public/$1.html"
     },
     {
       "src": "/(.*)",
