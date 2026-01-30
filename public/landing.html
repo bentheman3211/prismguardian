@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PrismGuard | Intelligent Discord Security</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-purple: #bc13fe;
+            --bg-dark: #050505;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #ffffff;
+            --text-muted: #b9bbbe;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+        body { background-color: var(--bg-dark); color: var(--text-main); overflow-x: hidden; line-height: 1.6; }
+
+        .ambient { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.3; }
+        .orb-1 { width: 500px; height: 500px; background: var(--neon-purple); top: -10%; left: -10%; }
+        .orb-2 { width: 600px; height: 600px; background: var(--neon-blue); bottom: -10%; right: -10%; }
+
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+        .text-gradient { background: linear-gradient(to right, var(--neon-blue), var(--neon-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+        nav { display: flex; justify-content: space-between; align-items: center; padding: 30px 0; border-bottom: 1px solid var(--glass-border); margin-bottom: 40px; }
+        .logo { font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; }
+        .nav-btn { background: transparent; border: 1px solid var(--neon-blue); color: var(--neon-blue); padding: 10px 22px; border-radius: 5px; text-decoration: none; font-weight: 600; transition: 0.3s; }
+        .nav-btn:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 20px var(--neon-blue); }
+
+        .hero { padding: 60px 0 100px; text-align: center; }
+        .hero h1 { font-size: 4rem; font-weight: 800; line-height: 1.1; margin-bottom: 25px; }
+        .hero p { font-size: 1.25rem; color: var(--text-muted); max-width: 750px; margin: 0 auto 40px; }
+        
+        .hero-buttons { display: flex; gap: 20px; justify-content: center; align-items: center; flex-wrap: wrap; }
+        
+        .hero-btn { 
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+            color: white;
+            border: none;
+        }
+        
+        .btn-primary:hover { 
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(188, 19, 254, 0.3);
+        }
+        
+        .btn-secondary { 
+            border: 2px solid var(--neon-blue);
+            color: var(--neon-blue);
+            background: transparent;
+        }
+        
+        .btn-secondary:hover { 
+            background: rgba(0, 243, 255, 0.1);
+            box-shadow: 0 0 20px var(--neon-blue);
+            transform: translateY(-3px);
+        }
+
+        /* --- FEATURE ROWS --- */
+        .feature-row { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; padding: 100px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .feature-row.rev { direction: rtl; }
+        .feature-row.rev .f-text { direction: ltr; }
+        .f-text h2 { font-size: 2.8rem; margin-bottom: 20px; font-weight: 800; }
+        .f-text p { color: var(--text-muted); font-size: 1.1rem; margin-bottom: 15px; }
+        .f-visual { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 20px; padding: 30px; position: relative; min-height: 400px; display: flex; flex-direction: column; justify-content: center; }
+
+        /* --- LOOPING RAID VISUAL --- */
+        .raid-container { background: #2f3136; border-radius: 8px; padding: 15px; height: 100%; min-height: 250px; display: flex; flex-direction: column; gap: 8px; position: relative; overflow: hidden; }
+        .raid-user { display: flex; gap: 10px; align-items: center; background: rgba(237, 66, 69, 0.1); padding: 8px; border-radius: 4px; border-left: 3px solid #ed4245; }
+        .av { width: 30px; height: 30px; border-radius: 50%; background: #ed4245; }
+        .raid-text { font-size: 0.85rem; color: #fff; }
+        .lock-overlay { position: absolute; inset: 0; background: rgba(188, 19, 254, 0.3); backdrop-filter: blur(6px); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 10; border: 2px solid var(--neon-purple); }
+
+        /* --- IMAGE SCANNER VISUAL --- */
+        .image-scanner { position: relative; width: 100%; height: 220px; background: #111; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #333; }
+        .scan-line { position: absolute; width: 100%; height: 3px; background: var(--neon-blue); top: 0; box-shadow: 0 0 15px var(--neon-blue); animation: scanLoop 2.5s infinite linear; }
+        @keyframes scanLoop { 0% { top: 0; } 100% { top: 100%; } }
+
+        /* --- FAQ --- */
+        .faq-section { padding: 100px 0; }
+        .faq-header { text-align: center; margin-bottom: 60px; }
+        .faq-header h2 { font-size: 3rem; margin-bottom: 15px; }
+        .faq-header p { color: var(--text-muted); font-size: 1.1rem; }
+
+        .faq-container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+        .faq-item { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; overflow: hidden; }
+
+        .faq-button { 
+            width: 100%;
+            padding: 25px;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            text-align: left;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .faq-button:hover { 
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--neon-blue);
+        }
+
+        .faq-button.active {
+            background: rgba(188, 19, 254, 0.1);
+            color: var(--neon-purple);
+        }
+
+        .faq-icon { 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            transition: transform 0.3s ease;
+        }
+
+        .faq-button.active .faq-icon {
+            transform: rotate(180deg);
+        }
+
+        .faq-content { 
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 25px;
+        }
+
+        .faq-content.active { 
+            max-height: 200px;
+            padding: 0 25px 25px 25px;
+        }
+
+        .faq-text { color: var(--text-muted); line-height: 1.7; }
+
+        /* --- RE-DESIGNED PRICING --- */
+        .pricing-section { padding: 100px 0; }
+        .pricing-header { text-align: center; margin-bottom: 60px; }
+        .pricing-container { display: flex; justify-content: center; align-items: stretch; gap: 30px; flex-wrap: wrap; }
+        
+        .p-card { 
+            background: linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
+            border: 1px solid var(--glass-border);
+            padding: 50px 40px;
+            border-radius: 30px;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .p-card:hover {
+            transform: translateY(-10px);
+            border-color: rgba(255,255,255,0.3);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .p-card.pro {
+            border-color: var(--neon-purple);
+            background: linear-gradient(145deg, rgba(188, 19, 254, 0.1) 0%, rgba(5, 5, 5, 1) 100%);
+        }
+
+        .p-card.pro:hover {
+            box-shadow: 0 20px 50px rgba(188, 19, 254, 0.2);
+        }
+
+        .p-card h3 { font-size: 1.8rem; margin-bottom: 10px; letter-spacing: 1px; }
+        .price { font-size: 4rem; font-weight: 800; margin-bottom: 10px; }
+        .price span { font-size: 1.2rem; color: var(--text-muted); font-weight: 400; }
+        .p-desc { color: var(--text-muted); margin-bottom: 30px; font-size: 0.95rem; }
+
+        .p-features { list-style: none; text-align: left; margin-bottom: 40px; flex-grow: 1; }
+        .p-features li { margin-bottom: 15px; display: flex; align-items: center; gap: 12px; color: #ddd; }
+        .p-features li i { color: var(--neon-blue); font-size: 0.9rem; }
+        .pro .p-features li i { color: var(--neon-purple); }
+
+        .btn-price {
+            display: block;
+            padding: 18px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 1rem;
+            transition: 0.3s;
+        }
+        .btn-free { border: 1px solid white; color: white; }
+        .btn-free:hover { background: white; color: black; }
+        .btn-pro { background: var(--neon-purple); color: white; }
+        .btn-pro:hover { filter: brightness(1.2); box-shadow: 0 0 20px var(--neon-purple); }
+
+        .badge {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--neon-purple);
+            color: white;
+            padding: 6px 20px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 900;
+            letter-spacing: 1px;
+        }
+
+        footer { text-align: center; padding: 80px; color: #fff; border-top: 1px solid var(--glass-border); }
+
+        /* --- SCROLL ANIMATIONS --- */
+        .fade-in { opacity: 0; }
+        .fade-in.visible { animation: fadeInUp 0.8s ease-out forwards; }
+        
+        .feature-row { opacity: 0; }
+        .feature-row.visible { animation: fadeInUp 0.8s ease-out forwards; }
+        
+        .pricing-section { opacity: 0; }
+        .pricing-section.visible { animation: fadeInUp 0.8s ease-out forwards; }
+        
+        .faq-section { opacity: 0; }
+        .faq-section.visible { animation: fadeInUp 0.8s ease-out forwards; }
+        
+        .p-card { opacity: 0; }
+        .p-card.visible { animation: fadeInUp 0.6s ease-out forwards; }
+        
+        .faq-item { opacity: 0; }
+        .faq-item.visible { animation: fadeInUp 0.6s ease-out forwards; }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .p-card.visible:nth-child(2) { animation-delay: 0.2s; }
+        .faq-item.visible:nth-child(2) { animation-delay: 0.1s; }
+        .faq-item.visible:nth-child(3) { animation-delay: 0.2s; }
+        .faq-item.visible:nth-child(4) { animation-delay: 0.3s; }
+
+        @media (max-width: 900px) {
+            .feature-row { grid-template-columns: 1fr; text-align: center; }
+            .hero h1 { font-size: 2.8rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ambient">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+    </div>
+
+    <div class="container">
+        <nav>
+            <div class="logo">PRISM<span class="text-gradient">GUARD</span></div>
+            <a href="#" class="nav-btn" style="opacity: 0.5; cursor: not-allowed;"><i class="fa-brands fa-discord"></i> Sign in with Discord</a>
+        </nav>
+
+        <section class="hero">
+            <h1>Moderation Less of a <span class="text-gradient">Hassle.</span></h1>
+            <p>We are dedicated to making server management effortless. PrismGuard catches bad actors and stops chaos automatically, so you can focus on your community.</p>
+            <div class="hero-buttons">
+                <a href="#" class="hero-btn btn-primary"><i class="fa-brands fa-discord"></i> Add Bot</a>
+                <a href="#pricing" class="hero-btn btn-secondary">View Pricing</a>
+            </div>
+        </section>
+
+        <section class="feature-row">
+            <div class="f-text">
+                <h2>AI Text Moderation</h2>
+                <p>Powered by advanced Large Language Models (LLMs), our AI understands context and intent, stopping toxicity even when users bypass filters. Rather than simple keyword matching, our system analyzes the semantic meaning of messages to catch sophisticated evasion tactics. We push logic updates weekly to stay ahead of new bypass attempts and evolving threats.</p>
+            </div>
+            <div class="f-visual">
+                <div class="raid-container" style="background: #36393f;">
+                    <div class="raid-user" style="background: rgba(255,255,255,0.05); border-left: 3px solid var(--neon-blue);">
+                        <div class="av" style="background: #5865f2;"></div>
+                        <div class="raid-text"><b>User_A:</b> Bypass filter with b.a.d.w.o.r.d.s</div>
+                    </div>
+                    <div class="raid-user" style="background: rgba(188, 19, 254, 0.1); border-left: 3px solid var(--neon-purple); margin-top: 10px;">
+                        <div class="av" style="background: var(--neon-purple);"></div>
+                        <div class="raid-text"><b>PrismGuard:</b> Message removed. [Context Filter Bypass]</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="feature-row rev">
+            <div class="f-text">
+                <h2>NSFW Image Detection</h2>
+                <p>Our hybrid approach combines local and API-based scanning for maximum accuracy and speed. Free tier uses <strong>NSFWJS</strong>, a lightweight local model that analyzes images in real-time without external dependencies. Pro tier upgrades to <strong>Google Vision AI</strong>, our most powerful API-driven scanner for enterprise-grade detection. We focus exclusively on channel media to keep the bot lightning-fast; avatars and user profiles are never scanned.</p>
+            </div>
+            <div class="f-visual">
+                <div class="image-scanner">
+                    <div class="scan-line"></div>
+                    <i class="fa-solid fa-image" style="font-size: 5rem; color: #222;"></i>
+                </div>
+            </div>
+        </section>
+
+        <section class="feature-row">
+            <div class="f-text">
+                <h2>Raid Protection</h2>
+                <p>When multiple accounts join and spam simultaneously, PrismGuard identifies the raid pattern instantly using behavioral analysis. Our intelligent system targets and removes raider accounts while keeping normal members completely safe and unaffected. The server locks down automatically to prevent further damage, purges malicious messages, and then safely re-opens once the threat is neutralized. Your community stays protected without disrupting legitimate conversations.</p>
+            </div>
+            <div class="f-visual">
+                <div class="raid-container" id="raid-box">
+                    <div class="lock-overlay" id="lock-ui">
+                        <i class="fa-solid fa-lock" style="font-size: 3rem; color: white; margin-bottom: 10px;"></i>
+                        <h2 style="color:white; text-align: center;">SERVER LOCKED</h2>
+                    </div>
+                    <div id="raid-list"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="pricing-section" id="pricing">
+            <div class="pricing-header">
+                <h2 style="font-size: 3rem;">Simple Pricing</h2>
+                <p style="color: var(--text-muted);">Choose the protection that fits your community size.</p>
+            </div>
+            
+            <div class="pricing-container">
+                <div class="p-card">
+                    <h3>Prism Free</h3>
+                    <div class="price">$0<span>/mo</span></div>
+                    <p class="p-desc">Essential protection for growing servers.</p>
+                    <ul class="p-features">
+                        <li><i class="fa-solid fa-check"></i> Basic AI Moderation</li>
+                        <li><i class="fa-solid fa-check"></i> NSFWJS Image Detection</li>
+                        <li><i class="fa-solid fa-check"></i> Standard Raid Shield</li>
+                        <li><i class="fa-solid fa-check"></i> Weekly Logic Updates</li>
+                    </ul>
+                    <a href="https://discord.com/oauth2/authorize?client_id=1454920707082555496&permissions=8&integration_type=0&scope=applications.commands+bot" class="btn-price btn-free">Add to Discord</a>
+                </div>
+
+                <div class="p-card pro">
+                    <h3>Prism Pro</h3>
+                    <div class="price">$4.99<span>/mo</span></div>
+                    <p class="p-desc">Enterprise-grade security for professionals.</p>
+                    <ul class="p-features">
+                        <li><i class="fa-solid fa-bolt"></i> Unlimited AI Moderation</li>
+                        <li><i class="fa-solid fa-bolt"></i> Priority Low Latency Message Checks</li>
+                        <li><i class="fa-solid fa-bolt"></i> Google Vision AI Image Detection</li>
+                        <li><i class="fa-solid fa-bolt"></i> Smart Multi-Factor Raid Protection</li>
+                        <li><i class="fa-solid fa-bolt"></i> Cross-Server Spam & Scam Detection</li>
+                        <li><i class="fa-solid fa-bolt"></i> Prism Complete Care</li>
+                    </ul>
+                    <a href="#" class="btn-price btn-pro" style="opacity: 0.6; cursor: not-allowed;">Coming Soon</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="faq-section">
+            <div class="faq-header">
+                <h2>Frequently Asked Questions</h2>
+                <p>Everything you need to know about PrismGuard</p>
+            </div>
+            
+            <div class="faq-container">
+                <div class="faq-item">
+                    <button class="faq-button" onclick="toggleFAQ(this)">
+                        <span>Is my data stored?</span>
+                        <div class="faq-icon">
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="faq-content">
+                        <p class="faq-text">No. Data is processed temporarily in memory for safety checks and is never permanently stored.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-button" onclick="toggleFAQ(this)">
+                        <span>Why not scan avatars?</span>
+                        <div class="faq-icon">
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="faq-content">
+                        <p class="faq-text">We focus on channel media where the risk is highest to keep the bot lightning-fast for all users.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-button" onclick="toggleFAQ(this)">
+                        <span>How often are updates pushed?</span>
+                        <div class="faq-icon">
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="faq-content">
+                        <p class="faq-text">We push logic updates weekly to ensure our AI stays ahead of new bypass attempts and evolving threats.</p>
+                    </div>
+                </div>
+
+                <div class="faq-item">
+                    <button class="faq-button" onclick="toggleFAQ(this)">
+                        <span>What's the difference between Free and Pro?</span>
+                        <div class="faq-icon">
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                    </button>
+                    <div class="faq-content">
+                        <p class="faq-text">Pro includes unlimited AI moderation, Google Vision AI for image scanning, adaptive raid lockdown, and priority exploit patches.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 PrismGuard Security. Making moderation less of a hassle.</p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleFAQ(button) {
+            const content = button.nextElementSibling;
+            const isActive = button.classList.contains('active');
+            
+            // Close all other FAQ items
+            document.querySelectorAll('.faq-button').forEach(btn => {
+                if (btn !== button && btn.classList.contains('active')) {
+                    btn.classList.remove('active');
+                    btn.nextElementSibling.classList.remove('active');
+                }
+            });
+            
+            // Toggle current item
+            button.classList.toggle('active');
+            content.classList.toggle('active');
+        }
+
+        // Scroll Animation Observer
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -100px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // Observe all animatable elements
+        document.querySelectorAll('.feature-row, .pricing-section, .faq-section, .p-card, .faq-item').forEach(el => {
+            observer.observe(el);
+        });
+
+        function autoRaid() {
+            const list = document.getElementById('raid-list');
+            const lock = document.getElementById('lock-ui');
+            const runCycle = () => {
+                list.innerHTML = '';
+                lock.style.display = 'none';
+                let users = ["Raider_1", "Raider_2", "Raider_3", "Raider_4", "Raider_5"];
+                users.forEach((u, i) => {
+                    setTimeout(() => {
+                        const div = document.createElement('div');
+                        div.className = 'raid-user';
+                        div.style.marginBottom = '10px';
+                        div.innerHTML = `<div class="av"></div><div class="raid-text"><b>${u}:</b> hey everyone, join my server-</div>`;
+                        list.appendChild(div);
+                        if(i === 4) {
+                            setTimeout(() => {
+                                list.innerHTML = '';
+                                lock.style.display = 'flex';
+                                setTimeout(runCycle, 3000);
+                            }, 1000);
+                        }
+                    }, i * 400);
+                });
+            };
+            runCycle();
+        }
+        autoRaid();
+    </script>
+</body>
+</html>
