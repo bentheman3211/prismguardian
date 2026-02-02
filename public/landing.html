@@ -172,15 +172,13 @@
         /* --- RE-DESIGNED PRICING --- */
         .pricing-section { padding: 100px 0; }
         .pricing-header { text-align: center; margin-bottom: 60px; }
-        .pricing-container { display: flex; justify-content: center; align-items: stretch; gap: 30px; flex-wrap: wrap; }
+        .pricing-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; align-items: stretch; }
         
         .p-card { 
             background: linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
             border: 1px solid var(--glass-border);
             padding: 50px 40px;
             border-radius: 30px;
-            width: 100%;
-            max-width: 400px;
             text-align: center;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             position: relative;
@@ -279,9 +277,14 @@
         .faq-item.visible:nth-child(3) { animation-delay: 0.2s; }
         .faq-item.visible:nth-child(4) { animation-delay: 0.3s; }
 
+        @media (max-width: 1200px) {
+            .pricing-container { grid-template-columns: repeat(2, 1fr); }
+        }
+
         @media (max-width: 900px) {
             .feature-row { grid-template-columns: 1fr; text-align: center; }
             .hero h1 { font-size: 2.8rem; }
+            .pricing-container { grid-template-columns: 1fr; }
         }
     </style>
 </head>
